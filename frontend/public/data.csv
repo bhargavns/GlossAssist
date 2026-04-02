@@ -1,0 +1,5 @@
+transcript,segmentation,gloss,translation,source
+sample sample sample,sample sample sample,sample sample sample,sample,dev
+sample2,sample2,sample2,sample2,test
+sample3,sample3,sample3,sample3,train
+sample4,sample4,sample4,sample4,train
