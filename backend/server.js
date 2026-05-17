@@ -140,6 +140,60 @@ app.get('/api/get_glosses', async (req, res) => {
   }
 });
 
+// GET /api/corrections?lang=Swahili&segmentation=na
+app.get('/api/corrections', async (req, res) => {
+  const { lang, segmentation } = req.query;
+  if (!lang || !segmentation) {
+    return res.status(400).json({ error: 'lang and segmentation are required' });
+  }
+  try {
+    const langResult = await db.one(
+      `SELECT lang_id FROM languages WHERE lang_str = $1`, [lang]
+    );
+    const corrections = await db.any(
+      `SELECT gloss, count
+       FROM corrections
+       WHERE lang_id = $1 AND segmentation = $2
+       ORDER BY count DESC`,
+      [langResult.lang_id, segmentation]
+    );
+    res.json({ success: true, data: corrections });
+  } catch (err) {
+    if (err.message?.includes('No data returned')) {
+      return res.status(404).json({ error: `Language '${lang}' not found` });
+    }
+    res.status(500).json({ error: 'Failed to fetch corrections', details: err.message });
+  }
+});
+
+// POST /api/corrections  body: { lang, corrections: [{segmentation, gloss}] }
+app.post('/api/corrections', async (req, res) => {
+  const { lang, corrections } = req.body;
+  if (!lang || !Array.isArray(corrections) || corrections.length === 0) {
+    return res.status(400).json({ error: 'lang and corrections[] are required' });
+  }
+  try {
+    const langResult = await db.one(
+      `SELECT lang_id FROM languages WHERE lang_str = $1`, [lang]
+    );
+    const lang_id = langResult.lang_id;
+
+    for (const { segmentation, gloss } of corrections) {
+      await db.none(
+        `INSERT INTO corrections (lang_id, segmentation, gloss, count)
+         VALUES ($1, $2, $3, 1)
+         ON CONFLICT (lang_id, segmentation, gloss)
+         DO UPDATE SET count = corrections.count + 1`,
+        [lang_id, segmentation, gloss]
+      );
+    }
+    res.json({ success: true, saved: corrections.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save corrections', details: err.message });
+  }
+});
+
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
