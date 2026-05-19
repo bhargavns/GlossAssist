@@ -14,7 +14,7 @@ function App() {
     <Router>
       <div className="App" style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
         <header className="App-header">
-          <h1>Linguistic Glossing Application</h1>
+          <h1>GlossAssist</h1>
           <nav style={{ margin: '20px 0' }}>
             <Link to="/" style={{ marginRight: '15px' }}>Home</Link>
             <Link to="/dashboard" style={{ marginRight: '15px' }}>Dashboard</Link>
