@@ -41,3 +41,27 @@ export const uploadGlosses = async (language, data) => {
     handleError(error, 'Failed to upload glosses');
   }
 };
+
+// Corrections APIs
+export const fetchCorrectionsAPI = async (language, segmentation) => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/corrections`, {
+      params: { lang: language, segmentation }
+    });
+    return response.data.data || [];
+  } catch (error) {
+    handleError(error, 'Failed to fetch corrections');
+  }
+};
+
+export const submitCorrections = async (language, corrections) => {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/corrections`, {
+      lang: language,
+      corrections
+    });
+    return response.data;
+  } catch (error) {
+    handleError(error, 'Failed to save corrections');
+  }
+};

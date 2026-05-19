@@ -19,3 +19,13 @@ CREATE TABLE IF NOT EXISTS lang_to_gloss (
   gloss_id INT REFERENCES glosses(gloss_id),
   PRIMARY KEY (lang_id, gloss_id)
 );
+
+CREATE TABLE IF NOT EXISTS corrections (
+  id SERIAL PRIMARY KEY,
+  lang_id INT NOT NULL REFERENCES languages(lang_id) ON DELETE CASCADE,
+  segmentation TEXT NOT NULL,
+  gloss TEXT NOT NULL,
+  count INT NOT NULL DEFAULT 1,
+  UNIQUE(lang_id, segmentation, gloss)
+);
+CREATE INDEX IF NOT EXISTS idx_corrections_lookup ON corrections(lang_id, segmentation);
