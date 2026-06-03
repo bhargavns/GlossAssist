@@ -2,9 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const axios = require('axios');
 const pgp = require('pg-promise')();
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Flask inference server URL (no trailing slash)
+const INFERENCE_API_BASE = process.env.INFERENCE_API_BASE || 'http://localhost:8000';
 
 // Middleware
 app.use(helmet());
@@ -146,7 +150,6 @@ app.get('/api/get_glosses', async (req, res) => {
 //     ON corrections(lang_id, segmentation);
 
 // GET /api/corrections?lang=Swahili&segmentation=na
-// Returns all user corrections for a given morpheme in a language, sorted by frequency.
 app.get('/api/corrections', async (req, res) => {
   const { lang, segmentation } = req.query;
 
@@ -168,8 +171,6 @@ app.get('/api/corrections', async (req, res) => {
     res.json({ success: true, data: corrections });
   } catch (err) {
     if (err.message?.includes('No data returned')) {
-      // Language not found — return empty rather than 404 so the frontend
-      // doesn't need special handling for a brand-new language with no corrections yet
       return res.json({ success: true, data: [] });
     }
     res.status(500).json({ error: 'Failed to fetch corrections', details: err.message });
@@ -177,8 +178,6 @@ app.get('/api/corrections', async (req, res) => {
 });
 
 // POST /api/corrections
-// Body: { lang: string, corrections: [{ segmentation: string, gloss: string }] }
-// Upserts each correction, incrementing its count on conflict.
 app.post('/api/corrections', async (req, res) => {
   const { lang, corrections } = req.body;
 
@@ -193,7 +192,7 @@ app.post('/api/corrections', async (req, res) => {
     const lang_id = langResult.lang_id;
 
     for (const { segmentation, gloss } of corrections) {
-      if (!segmentation || !gloss) continue; // skip malformed entries
+      if (!segmentation || !gloss) continue;
       await db.none(
         `INSERT INTO corrections (lang_id, segmentation, gloss, count)
          VALUES ($1, $2, $3, 1)
@@ -207,6 +206,44 @@ app.post('/api/corrections', async (req, res) => {
   } catch (err) {
     console.error('Error saving corrections:', err);
     res.status(500).json({ error: 'Failed to save corrections', details: err.message });
+  }
+});
+
+// ── Prediction (proxy to Flask inference server) ──────────────────────────────
+//
+// POST /api/predict
+// Body: { model: string, transcript: string, language: string }
+// Forwards to Flask at INFERENCE_API_BASE/<model>/predict
+// Returns: { success: true, data: { segmentation, gloss } }
+
+app.post('/api/predict', async (req, res) => {
+  const { model, transcript, language } = req.body;
+
+  if (!model || !transcript || !language) {
+    return res.status(400).json({
+      error: 'model, transcript, and language are required'
+    });
+  }
+
+  try {
+    const flaskResponse = await axios.post(
+      `${INFERENCE_API_BASE}/${encodeURIComponent(model)}/predict`,
+      { transcript, language },
+      { timeout: 30000 } // 30s timeout for inference
+    );
+
+    res.json({ success: true, data: flaskResponse.data });
+  } catch (err) {
+    console.error('Prediction proxy error:', err.message);
+
+    // Forward the Flask error status if available
+    const status = err.response?.status || 502;
+    const detail = err.response?.data?.error || err.message;
+
+    res.status(status).json({
+      error: 'Prediction failed',
+      details: detail
+    });
   }
 });
 

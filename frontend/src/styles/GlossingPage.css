@@ -329,3 +329,81 @@ hr { border: 0; border-top: 1px solid #eee; margin: 5px 0; width: 100%; }
 .session-actions { display: flex; gap: 15px; justify-content: center; }
 .link-simple { color: #6c757d; text-decoration: none; font-size: 14px; }
 .link-simple:hover { text-decoration: underline; }
+
+.model-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 10px;
+  font-size: 0.7em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #e0e7ff;
+  color: #3730a3;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+ 
+.badge-predicting {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 0.75em;
+  font-weight: 500;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 4px;
+  animation: pulse-badge 1.2s ease-in-out infinite;
+}
+ 
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+ 
+/* Prediction loading state */
+.prediction-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 16px;
+  color: #6b7280;
+}
+ 
+.prediction-loading .spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+ 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+ 
+.prediction-loading p {
+  margin: 0;
+  font-size: 0.95em;
+}
+ 
+/* Prediction error state */
+.prediction-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 12px;
+  color: #b91c1c;
+  text-align: center;
+}
+ 
+.prediction-error p {
+  margin: 0;
+  font-size: 0.95em;
+}
+ 

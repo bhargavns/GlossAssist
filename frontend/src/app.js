@@ -8,6 +8,8 @@ import DataUpload from './pages/DataUpload';
 import Dashboard from './pages/Dashboard';
 import GlossingPage from './pages/GlossingPage';
 import TestPage from './pages/TestPage';
+import LiveGlossingPage from "./pages/LiveGlossingPage";
+
 
 function App() {
   return (
@@ -20,6 +22,7 @@ function App() {
             <Link to="/dashboard" style={{ marginRight: '15px' }}>Dashboard</Link>
             <Link to="/view_data" style={{ marginRight: '15px' }}>View Data</Link>
             <Link to="/data_upload" style={{ marginRight: '15px' }}>Upload Data</Link>
+            
           </nav>
 
           <Routes>
@@ -29,6 +32,7 @@ function App() {
             <Route path="/data_upload" element={<DataUpload />} />
             <Route path="/view_data" element={<ViewData />} />
             <Route path="/test_page" element={<TestPage />} />
+            <Route path="/gloss-live/:language/:model/:example_num" element={<LiveGlossingPage />} />
           </Routes>
         </header>
       </div>

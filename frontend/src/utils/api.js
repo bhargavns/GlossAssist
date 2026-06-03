@@ -65,3 +65,29 @@ export const submitCorrections = async (language, corrections) => {
     handleError(error, 'Failed to save corrections');
   }
 };
+
+// Prediction API (direct to Flask inference server)
+const INFERENCE_API_BASE = process.env.REACT_APP_INFERENCE_API_BASE || 'http://localhost:5050';
+
+export const fetchModels = async () => {
+  try {
+    const response = await axios.get(`${INFERENCE_API_BASE}/models`);
+    return response.data.models || [];
+  } catch (error) {
+    // Inference server might not be running — return empty list
+    console.warn('Inference server not available:', error.message);
+    return [];
+  }
+};
+
+export const predictGloss = async (model, transcript, language) => {
+  try {
+    const response = await axios.post(`${INFERENCE_API_BASE}/${model}/predict`, {
+      transcript,
+      language
+    });
+    return response.data; // { segmentation, gloss }
+  } catch (error) {
+    handleError(error, 'Failed to get model prediction');
+  }
+};
