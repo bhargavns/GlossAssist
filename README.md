@@ -67,6 +67,59 @@ REACT_APP_STUDY_LANG_WITH_PRED=Study_WithPred
 docker compose up --build
 ```
 
+### Production (AWS EC2)
+
+Use the production stack and Dockerfiles instead of dev compose.
+
+1. Prepare env file on server:
+
+```bash
+cp .env.example .env
+```
+
+Set strong values at minimum:
+
+- `JWT_SECRET`
+- `ADMIN_API_KEY`
+- `POSTGRES_PASSWORD`
+- `CORS_ORIGINS` (comma-separated allowed origins, for example `https://yourdomain.com`)
+
+2. Build and run production services:
+
+```bash
+docker compose -f docker-compose.prod.yaml up --build -d
+```
+
+3. Service exposure:
+
+- Only Nginx is public on port `80`
+- Backend and DB are internal to Docker network
+
+4. First admin user bootstrap:
+
+Run from your EC2 shell after services are up:
+
+```bash
+docker compose -f docker-compose.prod.yaml exec backend \
+  npm run admin:bootstrap -- \
+  --username=your_admin_username \
+  --email=you@example.com \
+  --password='StrongPassword!ChangeMe'
+```
+
+This creates or upgrades that user to role `admin`.
+
+5. Optional registration-code creation via API key:
+
+```bash
+curl -X POST http://localhost/api/auth/create-code \
+  -H "x-admin-api-key: $ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"LIVE-ACCESS-2026"}'
+```
+
+If you use TLS termination via ALB/CloudFront/Nginx, call your HTTPS domain instead of localhost.
+
 | Service   | URL                        |
 |-----------|----------------------------|
 | Frontend  | http://localhost:3000       |

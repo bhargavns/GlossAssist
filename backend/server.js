@@ -12,24 +12,41 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
 
 // Flask inference server URL (no trailing slash)
 const INFERENCE_API_BASE = process.env.INFERENCE_API_BASE || 'http://localhost:8000';
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors(
+  CORS_ORIGINS.length > 0
+    ? {
+        origin: (origin, callback) => {
+          // Allow server-to-server and CLI requests without browser Origin header.
+          if (!origin) return callback(null, true);
+          if (CORS_ORIGINS.includes(origin)) return callback(null, true);
+          return callback(new Error('Not allowed by CORS'));
+        }
+      }
+    : undefined
+));
 app.use(morgan('combined'));
 app.use(express.json());
 
 // Database configuration
-const dbConfig = {
-  host: process.env.HOST,
-  port: 5432,
-  database: process.env.POSTGRES_DB,
-  user: process.env.POSTGRES_USER,
-  password: process.env.POSTGRES_PASSWORD,
-};
+const dbConfig = process.env.DATABASE_URL
+  ? process.env.DATABASE_URL
+  : {
+      host: process.env.DB_HOST || process.env.HOST || 'db',
+      port: Number(process.env.DB_PORT || 5432),
+      database: process.env.POSTGRES_DB,
+      user: process.env.POSTGRES_USER,
+      password: process.env.POSTGRES_PASSWORD
+    };
 
 const db = pgp(dbConfig);
 
