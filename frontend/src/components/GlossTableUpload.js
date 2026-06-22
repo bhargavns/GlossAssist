@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Papa from "papaparse";
+import { uploadGlosses } from "../utils/api";
 
 const GlossTableUpload = () => {
   const [data, setData] = useState([]);
+  const [languageCode, setLanguageCode] = useState('');
+  const [datasetName, setDatasetName] = useState('');
+  const [status, setStatus] = useState('');
 
   //   useEffect(() => {
   //     console.log('Fetching CSV...');
@@ -46,39 +50,65 @@ const GlossTableUpload = () => {
     });
   };
 
-  const saveToDatabase = () => {
-    const lang = prompt('Enter language code (e.g., "en", "es"):');
-    if (!lang) return;
+  const saveToDatabase = async () => {
+    if (!languageCode.trim()) {
+      setStatus('Please provide a language before saving.');
+      return;
+    }
 
-    console.log("Saving to database:", data);
+    if (!datasetName.trim()) {
+      setStatus('Please provide a dataset name before saving.');
+      return;
+    }
 
-    fetch("http://localhost:5001/api/upload_glosses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ lang: lang, data: data }),
-    })
-      .then((response) => response.json())
-      .then((result) => {
-        console.log("Saved:", result);
-        alert(`Data saved! ${result.count} rows inserted.`);
-      })
-      .catch((error) => {
-        console.error("Error saving:", error);
-        alert("Error saving to database");
+    setStatus('Saving dataset...');
+
+    try {
+      const result = await uploadGlosses({
+        language: languageCode.trim(),
+        datasetName: datasetName.trim(),
+        data
       });
+      setStatus(`Data saved successfully. ${result.count} rows inserted into dataset #${result.dataset_id}.`);
+    } catch (error) {
+      console.error("Error saving:", error);
+      setStatus(`Failed to save data: ${error}`);
+    }
   };
 
   return (
-    <div>
-      <input type="file" accept=".csv" onChange={handleFileUpload} />
-      {data.length > 0 && (
-        <button onClick={saveToDatabase}>Save to Database</button>
-      )}
+    <div className="data-panel">
+      <div className="data-controls">
+        <label htmlFor="uploadLanguage">Language code</label>
+        <input
+          id="uploadLanguage"
+          type="text"
+          value={languageCode}
+          onChange={(event) => setLanguageCode(event.target.value)}
+          placeholder="e.g., Swahili, Yao"
+        />
+
+        <label htmlFor="datasetName">Dataset name</label>
+        <input
+          id="datasetName"
+          type="text"
+          value={datasetName}
+          onChange={(event) => setDatasetName(event.target.value)}
+          placeholder="e.g., Pilot_Study_A"
+        />
+        <label htmlFor="csvInput">Dataset CSV</label>
+        <input id="csvInput" type="file" accept=".csv" onChange={handleFileUpload} />
+      </div>
 
       {data.length > 0 && (
-        <table border="1">
+        <button className="btn-solid" onClick={saveToDatabase}>Save to Database</button>
+      )}
+
+      {status && <p className="status-muted">{status}</p>}
+
+      {data.length > 0 && (
+        <div className="table-wrap">
+          <table className="data-table">
           <thead>
             <tr>
               <th>Transcript</th>
@@ -97,7 +127,8 @@ const GlossTableUpload = () => {
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       )}
     </div>
   );

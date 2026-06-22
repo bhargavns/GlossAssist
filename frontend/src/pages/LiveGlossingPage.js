@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { fetchGlosses, fetchCorrectionsAPI, submitCorrections, predictGloss } from "../utils/api";
+import { getCurrentUsername } from "../utils/auth";
 import "../styles/GlossingPage.css";
 
 // ─── GlossInput (unchanged from original) ────────────────────────────────────
@@ -81,9 +82,6 @@ function LiveGlossingPage() {
   // --- Per-example prediction state ---
   const [predicting, setPredicting] = useState(false);
   const [predictionError, setPredictionError] = useState(null);
-  // Cache of model predictions keyed by example index
-  // { [index]: { segmentation: "...", gloss: "..." } }
-  const [predictions, setPredictions] = useState({});
 
   // --- Session & Timer ---
   const [timers, setTimers] = useState({});
@@ -134,8 +132,6 @@ function LiveGlossingPage() {
       const result = await predictGloss(model, example.transcript, language);
       // result: { segmentation: "mor-phe-me ...", gloss: "GLOSS1 GLOSS2 ..." }
 
-      setPredictions(prev => ({ ...prev, [index]: result }));
-
       // Build word-level data from the prediction
       const segWords = result.segmentation ? result.segmentation.split(/\s+/) : [];
       const glossWords = result.gloss ? result.gloss.split(/\s+/) : [];
@@ -183,11 +179,12 @@ function LiveGlossingPage() {
     const loadGlosses = async () => {
       try {
         setLoading(true);
-        const data = await fetchGlosses(language, 100);
-        setGlosses(data);
+        const response = await fetchGlosses({ datasetId: Number(language), limit: 100, mode: 'treatment' });
+        const rows = response.data || [];
+        setGlosses(rows);
 
         const initialTimers = {};
-        data.forEach((_, index) => { initialTimers[index] = 0; });
+        rows.forEach((_, index) => { initialTimers[index] = 0; });
         setTimers(initialTimers);
 
         setError(null);
@@ -225,7 +222,15 @@ function LiveGlossingPage() {
     // No data yet — run live inference
     runPrediction(currentIndex);
     setIsPaused(false);
-  }, [currentIndex, loading, currentGloss]); // intentionally minimal deps to avoid re-triggering
+  }, [
+    currentIndex,
+    loading,
+    currentGloss,
+    allEdits,
+    allOriginalData,
+    submittedIndices,
+    runPrediction
+  ]);
 
   // ── 3. Timer ──
   useEffect(() => {
@@ -297,11 +302,6 @@ function LiveGlossingPage() {
           delete copy[nextIndex];
           return copy;
         });
-        setPredictions(prev => {
-          const copy = { ...prev };
-          delete copy[nextIndex];
-          return copy;
-        });
       }
 
       navigate(`/gloss-live/${language}/${model}/${nextIndex + 1}`);
@@ -311,8 +311,11 @@ function LiveGlossingPage() {
   // ── 6. CSV Export ──
   const downloadCSV = () => {
     if (!sessionData) return;
+    const usernameCell = sessionData.username
+      ? `"${sessionData.username.replace(/"/g, '""')}"`
+      : 'anonymous';
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Example_ID,Source,Word_Index,Segmentation,Gloss,Translation,Time_Spent_Sec\n";
+    csvContent += "Username,Example_ID,Source,Word_Index,Segmentation,Gloss,Translation,Time_Spent_Sec\n";
     Object.entries(sessionData.finalData).forEach(([idx, data]) => {
       const exampleId = parseInt(idx) + 1;
       const source = data.source || 'Unknown';
@@ -320,7 +323,7 @@ function LiveGlossingPage() {
       const cleanTrans = data.translation ? `"${data.translation.replace(/"/g, '""')}"` : "";
       Object.entries(data.words).forEach(([wIdx, wordData]) => {
         csvContent += [
-          exampleId, source, parseInt(wIdx) + 1,
+          usernameCell, exampleId, source, parseInt(wIdx) + 1,
           wordData.segmentation, wordData.gloss, cleanTrans, time,
         ].join(",") + "\n";
       });
@@ -359,6 +362,7 @@ function LiveGlossingPage() {
       exampleEdits[index] = editCount;
     });
     setSessionData({
+      username: getCurrentUsername(),
       language,
       model,
       totalExamples: glosses.length,
@@ -391,7 +395,7 @@ function LiveGlossingPage() {
             <button className="btn btn-primary" onClick={() => console.log(sessionData)}>Log to Console</button>
           </div>
           <div style={{ marginTop: '20px' }}>
-            <Link to="/dashboard" className="link-simple">Back to Dashboard</Link>
+            <Link to="/glossing" className="link-simple">Back to Glossing</Link>
           </div>
         </div>
       </div>
@@ -405,7 +409,7 @@ function LiveGlossingPage() {
     <div className="glossing-page">
       {/* ── Header ── */}
       <div className="glossing-header">
-        <button onClick={() => navigate('/dashboard')} className="btn-exit">← Exit Session</button>
+        <button onClick={() => navigate('/glossing')} className="btn-exit">← Exit Session</button>
         <h2>
           {language} Glossing
           <span className="model-badge">{model}</span>

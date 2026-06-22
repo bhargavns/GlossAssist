@@ -38,7 +38,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.dev
     environment:
-      REACT_APP_API_URL: http://localhost:5001
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:5001}
+      REACT_APP_USER_STUDY_MODE: ${REACT_APP_USER_STUDY_MODE:-false}
+      REACT_APP_STUDY_LANG_NO_PRED: ${REACT_APP_STUDY_LANG_NO_PRED:-Study_NoPred}
+      REACT_APP_STUDY_LANG_WITH_PRED: ${REACT_APP_STUDY_LANG_WITH_PRED:-Study_WithPred}
       CHOKIDAR_USEPOLLING: true  # For file watching on Mac
     volumes:
       - ./frontend:/app
@@ -57,6 +60,17 @@ services:
       - "8080:8080"
     depends_on:
       - db
+
+  tests:
+    image: node:lts-alpine
+    working_dir: /app
+    command: ["node", "scripts/compose-smoke-tests.mjs"]
+    volumes:
+      - ./:/app:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: "no"
 
 volumes:
   postgres_data:

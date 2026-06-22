@@ -2,10 +2,13 @@ import GlossTableDisplay from '../components/GlossTableDisplay';
 
 const ViewData = () => {
   return (
-    <div>
-      <h2> This is a sample glosser page </h2>
+    <section className="data-page">
+      <div className="data-page-header">
+        <h2>Explore Uploaded Data</h2>
+        <p>Preview accessible datasets (your private uploads plus admin-shared datasets) before annotation.</p>
+      </div>
       <GlossTableDisplay />
-    </div>
+    </section>
   );
 };
 

@@ -3,3 +3,4 @@ example.html
 example2.html
 .env
 node_modules
+.env.example

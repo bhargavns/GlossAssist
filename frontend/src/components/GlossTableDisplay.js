@@ -1,15 +1,35 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { fetchDatasets, fetchGlosses } from "../utils/api";
 
 function GlossTableDisplay() {
   const [data, setData] = useState([]);
-  const [lang, setLang] = useState("");
+  const [datasets, setDatasets] = useState([]);
+  const [selectedDataset, setSelectedDataset] = useState("");
   const [limit, setLimit] = useState(10);
+  const [mode, setMode] = useState('treatment');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const loadDatasets = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const rows = await fetchDatasets();
+      setDatasets(rows);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDatasets();
+  }, [loadDatasets]);
+
   const retrieveFromDb = async () => {
-    if (!lang) {
-      alert("Please enter a language code");
+    if (!selectedDataset) {
+      setError('Please choose a dataset.');
       return;
     }
 
@@ -17,43 +37,50 @@ function GlossTableDisplay() {
     setError(null);
 
     try {
-      const response = await fetch(
-        `http://localhost:5001/api/get_glosses?lang=${encodeURIComponent(lang)}&limit=${limit}`
-      );
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to fetch data');
-      }
-
-      setData(result.data);
-      console.log("Retrieved:", result);
-      alert(`Success! ${result.count} rows retrieved.`);
+      const response = await fetchGlosses({
+        datasetId: Number(selectedDataset),
+        limit: Number(limit),
+        mode
+      });
+      setData(response.data || []);
+      setError(null);
       
     } catch (error) {
       console.error("Error retrieving:", error);
-      setError(error.message);
-      alert(`Error: ${error.message}`);
+      setError(String(error));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <div style={{ marginBottom: "20px" }}>
-        <label htmlFor="lang">Enter Language Code: </label>
-        <input
-          type="text"
-          id="lang"
-          name="lang"
-          value={lang}
-          onChange={(e) => setLang(e.target.value)}
-          placeholder="e.g., en, es, fr"
-        />
+    <div className="data-panel">
+      <div className="data-controls data-controls-inline">
+        <button className="btn-inline" onClick={loadDatasets} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Load Datasets'}
+        </button>
+
+        <label htmlFor="datasetId">Dataset: </label>
+        <select
+          id="datasetId"
+          value={selectedDataset}
+          onChange={(e) => setSelectedDataset(e.target.value)}
+        >
+          <option value="">--Select a dataset--</option>
+          {datasets.map((dataset) => (
+            <option key={dataset.dataset_id} value={dataset.dataset_id}>
+              {dataset.dataset_name} ({dataset.language})
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor="mode">Mode: </label>
+        <select id="mode" value={mode} onChange={(e) => setMode(e.target.value)}>
+          <option value="treatment">Treatment</option>
+          <option value="control">Control</option>
+        </select>
         
-        <label htmlFor="limit" style={{ marginLeft: "20px" }}>Limit: </label>
+        <label htmlFor="limit">Limit: </label>
         <input
           type="number"
           id="limit"
@@ -62,26 +89,26 @@ function GlossTableDisplay() {
           onChange={(e) => setLimit(e.target.value)}
           min="1"
           max="100"
-          style={{ width: "60px" }}
         />
         
         <button 
+          className="btn-solid"
           onClick={retrieveFromDb} 
           disabled={loading}
-          style={{ marginLeft: "10px" }}
         >
           {loading ? "Loading..." : "Retrieve Rows"}
         </button>
       </div>
 
       {error && (
-        <div style={{ color: "red", marginBottom: "10px" }}>
+        <div className="status-error-box">
           Error: {error}
         </div>
       )}
 
       {data.length > 0 && (
-        <table border="1" style={{ width: "100%", borderCollapse: "collapse" }}>
+        <div className="table-wrap">
+          <table className="data-table">
           <thead>
             <tr>
               <th>Transcript</th>
@@ -102,11 +129,12 @@ function GlossTableDisplay() {
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       )}
       
       {data.length === 0 && !loading && !error && (
-        <p>No data to display. Enter a language code and click Retrieve Rows.</p>
+        <p className="status-muted">Load datasets, choose one, and retrieve rows.</p>
       )}
     </div>
   );

@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
 import GlossTableUpload from '../components/GlossTableUpload';
 
 const DataUpload = () => {
   return (
-    <div>
-      <h2> Upload your data here </h2>
-      <p> Data needs to be a .csv file with 5 columns - transcript, segmentation, gloss, translation, and source (train/dev/test) </p>
+    <section className="data-page">
+      <div className="data-page-header">
+        <h2>Upload Dataset</h2>
+        <p>
+          Upload a CSV with transcript, segmentation, gloss, translation, and source columns.
+          Datasets uploaded by admins are shared; datasets uploaded by standard users are private.
+        </p>
+      </div>
       <GlossTableUpload />
-    </div>
+    </section>
   );
 };
 

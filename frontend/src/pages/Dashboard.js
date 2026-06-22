@@ -1,27 +1,27 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchLanguages, fetchModels } from "../utils/api";
+import {
+  fetchGlosses,
+  fetchDatasets
+} from "../utils/api";
 import "../styles/Dashboard.css";
 
 function Dashboard() {
-  const [selectedLang, setSelectedLang] = useState("");
-  const [langs, setLangs] = useState([]);
+  const [selectedDatasetId, setSelectedDatasetId] = useState("");
+  const [datasets, setDatasets] = useState([]);
+  const [datasetExamples, setDatasetExamples] = useState([]);
+  const [datasetExamplesLoading, setDatasetExamplesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Live glossing state
-  const [models, setModels] = useState([]);
-  const [selectedModel, setSelectedModel] = useState("");
-  const [modelsLoading, setModelsLoading] = useState(false);
 
   const navigate = useNavigate();
 
   useEffect(() => {
-    const loadLanguages = async () => {
+    const loadDashboardData = async () => {
       try {
         setLoading(true);
-        const languages = await fetchLanguages();
-        setLangs(languages);
+        const datasetsData = await fetchDatasets();
+        setDatasets(datasetsData || []);
         setError(null);
       } catch (err) {
         setError(err);
@@ -30,42 +30,61 @@ function Dashboard() {
       }
     };
 
-    loadLanguages();
+    loadDashboardData();
   }, []);
 
-  // Fetch available models from the inference server
   useEffect(() => {
-    const loadModels = async () => {
+    const loadDatasetExamples = async () => {
+      if (!selectedDatasetId) {
+        setDatasetExamples([]);
+        return;
+      }
+
       try {
-        setModelsLoading(true);
-        const modelList = await fetchModels();
-        setModels(modelList);
+        setDatasetExamplesLoading(true);
+        const response = await fetchGlosses({
+          datasetId: Number(selectedDatasetId),
+          mode: "treatment"
+        });
+        setDatasetExamples(response.data || []);
+        setError(null);
+      } catch (err) {
+        setError(err);
+        setDatasetExamples([]);
       } finally {
-        setModelsLoading(false);
+        setDatasetExamplesLoading(false);
       }
     };
 
-    loadModels();
-  }, []);
-
-  const handleLangSelection = (e) => {
-    setSelectedLang(e.target.value);
-  };
+    loadDatasetExamples();
+  }, [selectedDatasetId]);
 
   const handleStartGlossing = () => {
-    if (selectedLang) {
-      navigate(`/gloss/${selectedLang}/1`);
+    if (selectedDatasetId) {
+      navigate(`/gloss/${selectedDatasetId}/1`, {
+        state: {
+          datasetId: Number(selectedDatasetId),
+          studyFlow: null,
+          mode: 'treatment'
+        }
+      });
     }
   };
 
-  const handleStartLiveGlossing = () => {
-    if (selectedLang && selectedModel) {
-      navigate(`/gloss-live/${selectedLang}/${selectedModel}/1`);
-    }
+  const handleGlossExample = (rowIndex) => {
+    if (!selectedDatasetId || !rowIndex) return;
+
+    navigate(`/gloss/${selectedDatasetId}/${rowIndex}`, {
+      state: {
+        datasetId: Number(selectedDatasetId),
+        studyFlow: null,
+        mode: "treatment"
+      }
+    });
   };
 
   if (loading) {
-    return <div className="loading">Loading languages...</div>;
+    return <div className="loading">Loading glossing workspace...</div>;
   }
 
   if (error) {
@@ -74,80 +93,75 @@ function Dashboard() {
 
   return (
     <div className="dashboard-container">
-      <h2>Language Dashboard</h2>
+      <h2>Glossing</h2>
 
       <div className="language-selection">
-        <label htmlFor="langSelect">
-          Pick the language you want to work with:
+        <label htmlFor="datasetSelect">
+          Pick the dataset you want to work with:
         </label>
         <select
-          id="langSelect"
-          value={selectedLang}
-          onChange={handleLangSelection}
+          id="datasetSelect"
+          value={selectedDatasetId}
+          onChange={(e) => setSelectedDatasetId(e.target.value)}
         >
-          <option value="">--Select a language--</option>
-          {langs.map((lang, index) => (
-            <option key={index} value={lang}>
-              {lang}
+          <option value="">--Select a dataset--</option>
+          {datasets.map((dataset) => (
+            <option key={dataset.dataset_id} value={dataset.dataset_id}>
+              {dataset.dataset_name} ({dataset.language})
             </option>
           ))}
         </select>
       </div>
 
-      {selectedLang && (
+      {selectedDatasetId && (
         <div className="selection-confirmation">
-          <p>You selected: <strong>{selectedLang}</strong></p>
+          <p>
+            You selected dataset <strong>{selectedDatasetId}</strong>. You can start at the first example or pick any example below.
+          </p>
 
           <button
             onClick={handleStartGlossing}
             className="start-button"
           >
-            Start Glossing →
+            Start From First Example →
           </button>
 
-          {/* Live Glossing section */}
-          <div className="live-glossing-section">
-            <hr />
-            <p className="live-glossing-label">Or start with live model predictions:</p>
-
-            {modelsLoading ? (
-              <p className="models-loading">Loading models...</p>
-            ) : models.length > 0 ? (
-              <>
-                <select
-                  id="modelSelect"
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="model-select"
-                >
-                  <option value="">--Select a model--</option>
-                  {models.map((m, index) => (
-                    <option key={index} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  onClick={handleStartLiveGlossing}
-                  className="start-button start-button-live"
-                  disabled={!selectedModel}
-                >
-                  Start Live Glossing ⚡
-                </button>
-              </>
+          <div className="table-wrap" style={{ marginTop: '1rem' }}>
+            {datasetExamplesLoading ? (
+              <p className="no-languages">Loading examples...</p>
+            ) : datasetExamples.length === 0 ? (
+              <p className="no-languages">No examples found in this dataset.</p>
             ) : (
-              <p className="no-models">
-                No inference server detected. Start your Flask server to enable live glossing.
-              </p>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Example Index</th>
+                    <th>Transcript</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {datasetExamples.map((row) => (
+                    <tr key={row.gloss_id || row.row_index}>
+                      <td>{row.row_index}</td>
+                      <td>{row.transcript}</td>
+                      <td>
+                        <button className="btn-inline" onClick={() => handleGlossExample(row.row_index)}>
+                          Gloss Example
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
       )}
 
-      {langs.length === 0 && !loading && (
+      {datasets.length === 0 && !loading && (
         <p className="no-languages">
-          No languages found in the database. Please upload some data first.
+          No datasets found. Upload one first, or use the seeded SampleStudyDataset.
         </p>
       )}
     </div>

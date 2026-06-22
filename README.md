@@ -42,7 +42,23 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=yourpassword
 DATABASE_URL=postgresql://postgres:yourpassword@db:5432/glossassist
 JWT_SECRET=your-secret-key
+REGISTRATION_CODE=optional-shared-registration-code
+ADMIN_EMAIL=admin@example.com
+ADMIN_API_KEY=set-a-strong-admin-key
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=smtp-user
+SMTP_PASS=smtp-password
+SMTP_FROM=glossassist@example.com
 INFERENCE_API_BASE=http://your-flask-server:8000
+```
+
+For user-study mode in the frontend, set these variables in the frontend environment:
+
+```env
+REACT_APP_USER_STUDY_MODE=true
+REACT_APP_STUDY_LANG_NO_PRED=Study_NoPred
+REACT_APP_STUDY_LANG_WITH_PRED=Study_WithPred
 ```
 
 ### 2. Start services
@@ -60,6 +76,23 @@ docker compose up --build
 ### 3. Initialize the database
 
 SQL init scripts in `database/init/` are run automatically on first startup by the Postgres container.
+
+To re-apply schema + seed data at any time (for demo/user-study resets), run:
+
+```bash
+npm --prefix backend run db:reseed
+```
+
+Default seeded local users:
+
+- Admin: username `admin`, password `Admin123!Change`
+- Normal user: username `researcher`, password `User123!Change`
+
+Default seeded study dataset:
+
+- `SampleStudyDataset` (language: `SampleStudyLanguage`, globally visible)
+
+After logging in as admin, open `/admin` in the frontend for the admin console.
 
 The corrections feature requires this table (included in init or run manually):
 
@@ -81,11 +114,45 @@ CREATE INDEX IF NOT EXISTS idx_corrections_lookup
 
 ## API Reference
 
+### Authentication
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/auth/login` | Login with username/email and password |
+| `POST` | `/api/auth/register` | Register with username/email/password + access code |
+| `POST` | `/api/auth/request-code` | Request an access code (saved + emailed to admin if SMTP configured) |
+| `POST` | `/api/auth/create-code` | Admin endpoint to generate a registration code (`x-admin-api-key` header required) |
+| `GET` | `/api/auth/me` | Get current authenticated user |
+
+### Admin
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/admin/code-requests` | List all access code requests (admin JWT required) |
+| `PATCH` | `/api/admin/code-requests/:id` | Update request status to `pending`, `approved`, or `rejected` |
+| `GET` | `/api/admin/registration-codes` | List recently created registration codes |
+| `POST` | `/api/admin/registration-codes` | Create a registration code |
+
+All non-auth data endpoints require a valid `Authorization: Bearer <token>` header.
+
 ### Languages
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/languages` | List all languages |
+
+### Datasets
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/datasets` | List datasets accessible to current user |
+| `POST` | `/api/upload_glosses` | Upload or overwrite a dataset by owner + dataset name |
+| `GET` | `/api/get_glosses?datasetId=&limit=&mode=` | Fetch dataset rows for `control` (hide predictions) or `treatment` |
+
+Dataset visibility rules:
+
+- Admin uploads are globally visible.
+- Non-admin uploads are only visible to the uploader.
 
 ### Glosses
 
@@ -106,6 +173,14 @@ CREATE INDEX IF NOT EXISTS idx_corrections_lookup
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/predict` | Proxy a prediction request to the inference server |
+
+### Study Sessions
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/study-sessions` | Save completed user-study session details + final modified rows |
+| `GET` | `/api/study-sessions` | List saved sessions (own sessions, or all for admins) |
+| `GET` | `/api/study-sessions/:id/export` | Retrieve saved session rows for CSV export |
 
 Prediction request body:
 ```json

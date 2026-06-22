@@ -2,10 +2,10 @@
 
 .glossing-page {
   min-height: 100vh;
-  background-color: #f0f2f5;
+  background-color: #eef2f7;
   padding: 20px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color: #333;
+  font-family: "DM Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  color: #1e2b3c;
 }
 
 .glossing-header {
@@ -94,9 +94,9 @@
 .progress-segment:hover { background-color: #dbe0e6; transform: scaleY(1.2); }
 .progress-segment.completed { background-color: #28a745; }
 .progress-segment.active {
-  background-color: #007bff;
+  background-color: #0a7d8c;
   transform: scaleY(1.4);
-  box-shadow: 0 0 4px rgba(0, 123, 255, 0.4);
+  box-shadow: 0 0 4px rgba(10, 125, 140, 0.45);
 }
 
 /* Layout */
@@ -131,8 +131,8 @@
 
 .source-badge {
     display: inline-block;
-    background-color: #e7f5ff;
-    color: #007bff;
+  background-color: #e6f4f6;
+  color: #0b6b77;
     padding: 5px 10px;
     border-radius: 6px;
     font-weight: 700;
@@ -338,8 +338,8 @@ hr { border: 0; border-top: 1px solid #eee; margin: 5px 0; width: 100%; }
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background: #e0e7ff;
-  color: #3730a3;
+  background: #e5f3f5;
+  color: #0b5962;
   border-radius: 4px;
   vertical-align: middle;
 }
@@ -376,7 +376,7 @@ hr { border: 0; border-top: 1px solid #eee; margin: 5px 0; width: 100%; }
   width: 36px;
   height: 36px;
   border: 3px solid #e5e7eb;
-  border-top-color: #6366f1;
+  border-top-color: #0a7d8c;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -405,5 +405,44 @@ hr { border: 0; border-top: 1px solid #eee; margin: 5px 0; width: 100%; }
 .prediction-error p {
   margin: 0;
   font-size: 0.95em;
+}
+
+@media (max-width: 1180px) {
+  .glossing-container {
+    grid-template-columns: 250px 1fr;
+  }
+
+  .action-side {
+    grid-column: 1 / -1;
+    position: static;
+  }
+}
+
+@media (max-width: 860px) {
+  .glossing-page {
+    padding: 12px;
+  }
+
+  .glossing-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .glossing-container {
+    grid-template-columns: 1fr;
+  }
+
+  .text-side {
+    position: static;
+  }
+
+  .word-breakdown {
+    grid-template-columns: 1fr;
+  }
+
+  .session-actions {
+    flex-direction: column;
+  }
 }
  
