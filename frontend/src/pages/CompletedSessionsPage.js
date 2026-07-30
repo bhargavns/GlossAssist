@@ -5,6 +5,17 @@ import {
   fetchStudyComparisonReport,
   fetchStudySessionExport
 } from "../utils/api";
+import { interviewQuestions, surveyQuestionSections } from "../data/studyFeedbackQuestions";
+
+const surveyQuestionsById = Object.fromEntries(
+  surveyQuestionSections.flatMap((section) => section.questions.map((question) => [question.id, question.prompt]))
+);
+
+function getInterviewQuestion(key) {
+  const match = /^interview_(\d+)$/.exec(key);
+  const index = Number(match?.[1]) - 1;
+  return interviewQuestions[index] || key;
+}
 
 function CompletedSessionsPage() {
   const [loading, setLoading] = useState(true);
@@ -305,14 +316,14 @@ function CompletedSessionsPage() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Question ID</th>
+                        <th>Question</th>
                         <th>Answer</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Object.entries(selectedFeedback.feedback.survey_answers || {}).map(([key, value]) => (
                         <tr key={key}>
-                          <td>{key}</td>
+                          <td>{surveyQuestionsById[key] || key}</td>
                           <td>{String(value)}</td>
                         </tr>
                       ))}
@@ -326,7 +337,7 @@ function CompletedSessionsPage() {
                 ) : (
                   Object.entries(selectedFeedback.feedback.interview_answers || {}).map(([key, value]) => (
                     <div key={key} style={{ marginBottom: "12px" }}>
-                      <p style={{ marginBottom: "4px" }}><strong>{key}</strong></p>
+                      <p style={{ marginBottom: "4px" }}><strong>{getInterviewQuestion(key)}</strong></p>
                       <textarea readOnly value={String(value || "")} rows={7} style={{ width: "100%" }} />
                     </div>
                   ))

@@ -12,6 +12,7 @@ import {
 } from "../utils/api";
 import { getCurrentUsername } from "../utils/auth";
 import { interviewQuestions, surveyQuestionSections } from "../data/studyFeedbackQuestions";
+import { selectBalancedStudyExamples } from "../utils/studyExamples";
 import "../styles/GlossingPage.css";
 
 function GlossInput({ value, modelPrediction, suggestions = [], onChange, disabled }) {
@@ -98,14 +99,6 @@ function shuffleArray(input) {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
-}
-
-function selectExamples(rows, limit, randomSample) {
-  if (!randomSample || rows.length <= limit) {
-    return rows.slice(0, limit);
-  }
-
-  return shuffleArray(rows).slice(0, limit);
 }
 
 function normalizeError(err) {
@@ -282,11 +275,11 @@ function GlossingPage() {
           }
 
           const [controlResponse, treatmentResponse] = await Promise.all([
-            fetchGlosses({ datasetId: controlDatasetId, limit: randomSample ? undefined : exampleLimit, mode: "control" }),
-            fetchGlosses({ datasetId: treatmentDatasetId, limit: randomSample ? undefined : exampleLimit, mode: "treatment" })
+            fetchGlosses({ datasetId: controlDatasetId, mode: "control" }),
+            fetchGlosses({ datasetId: treatmentDatasetId, mode: "treatment" })
           ]);
 
-          const controlRows = selectExamples(controlResponse.data || [], exampleLimit, randomSample).map((row, idx) => ({
+          const controlRows = selectBalancedStudyExamples(controlResponse.data || [], exampleLimit, randomSample).map((row, idx) => ({
             ...row,
             mode: "control",
             originDatasetId: controlDatasetId,
@@ -294,7 +287,7 @@ function GlossingPage() {
             localExampleId: `control-${idx + 1}`
           }));
 
-          const treatmentRows = selectExamples(treatmentResponse.data || [], exampleLimit, randomSample).map((row, idx) => ({
+          const treatmentRows = selectBalancedStudyExamples(treatmentResponse.data || [], exampleLimit, randomSample).map((row, idx) => ({
             ...row,
             mode: "treatment",
             originDatasetId: treatmentDatasetId,
@@ -331,10 +324,13 @@ function GlossingPage() {
 
         const response = await fetchGlosses({
           datasetId,
-          limit: isStudy && !randomSample ? exampleLimit : undefined,
           mode
         });
-        const rows = selectExamples(response.data || [], exampleLimit, isStudy && randomSample).map((row, idx) => ({
+        const sourceRows = response.data || [];
+        const selectedRows = isStudy
+          ? selectBalancedStudyExamples(sourceRows, exampleLimit, randomSample)
+          : sourceRows.slice(0, exampleLimit);
+        const rows = selectedRows.map((row, idx) => ({
           ...row,
           mode,
           originDatasetId: datasetId,

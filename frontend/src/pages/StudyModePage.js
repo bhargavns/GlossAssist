@@ -7,7 +7,7 @@ function StudyModePage() {
   const [datasets, setDatasets] = useState([]);
   const [controlDatasetId, setControlDatasetId] = useState('');
   const [treatmentDatasetId, setTreatmentDatasetId] = useState('');
-  const [exampleLimit, setExampleLimit] = useState(5);
+  const [exampleLimit, setExampleLimit] = useState(10);
   const [randomSampleEnabled, setRandomSampleEnabled] = useState(false);
   const [shuffleEnabled, setShuffleEnabled] = useState(true);
   const [error, setError] = useState('');
@@ -41,8 +41,8 @@ function StudyModePage() {
 
     const numericLimit = Number(exampleLimit);
 
-    if (!numericLimit || numericLimit <= 0) {
-      setError('Please choose a valid example limit greater than 0.');
+    if (!Number.isInteger(numericLimit) || numericLimit <= 0 || numericLimit % 2 !== 0) {
+      setError('Choose a positive, even number of examples per condition so each condition can contain an equal number of short and long examples.');
       return;
     }
 
@@ -141,11 +141,12 @@ function StudyModePage() {
             ))}
           </select>
 
-          <label htmlFor="studyLimit">Examples Per Session</label>
+          <label htmlFor="studyLimit">Examples Per Condition</label>
           <input
             id="studyLimit"
             type="number"
-            min="1"
+            min="2"
+            step="2"
             value={exampleLimit}
             onChange={(event) => setExampleLimit(event.target.value)}
           />
@@ -156,8 +157,8 @@ function StudyModePage() {
             value={randomSampleEnabled ? 'random' : 'first'}
             onChange={(event) => setRandomSampleEnabled(event.target.value === 'random')}
           >
-            <option value="first">First N rows in each dataset</option>
-            <option value="random">Random N rows in each dataset</option>
+            <option value="first">First balanced short/long examples in each dataset</option>
+            <option value="random">Random balanced short/long examples in each dataset</option>
           </select>
 
           <label htmlFor="studyShuffle">Shuffle Control and Treatment Into One Session</label>
@@ -182,7 +183,10 @@ function StudyModePage() {
           </li>
           <li>
             <strong>Example Selection</strong>
-            <p>Choose either the first N rows or a random N-row sample from each dataset.</p>
+            <p>
+              Every condition contains a 50/50 split: short examples have three words or fewer,
+              and long examples have more than three words. Choose an even number of examples per condition.
+            </p>
           </li>
           <li>
             <strong>Shuffle Option</strong>
