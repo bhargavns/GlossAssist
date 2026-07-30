@@ -1,0 +1,1 @@
+export const inferenceEnabled = process.env.REACT_APP_ENABLE_INFERENCE === 'true';

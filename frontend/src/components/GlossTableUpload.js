@@ -6,6 +6,7 @@ const GlossTableUpload = () => {
   const [data, setData] = useState([]);
   const [languageCode, setLanguageCode] = useState('');
   const [datasetName, setDatasetName] = useState('');
+  const [description, setDescription] = useState('');
   const [status, setStatus] = useState('');
 
   //   useEffect(() => {
@@ -67,6 +68,7 @@ const GlossTableUpload = () => {
       const result = await uploadGlosses({
         language: languageCode.trim(),
         datasetName: datasetName.trim(),
+        description: description.trim(),
         data
       });
       setStatus(`Data saved successfully. ${result.count} rows inserted into dataset #${result.dataset_id}.`);
@@ -96,6 +98,16 @@ const GlossTableUpload = () => {
           onChange={(event) => setDatasetName(event.target.value)}
           placeholder="e.g., Pilot_Study_A"
         />
+
+        <label htmlFor="datasetDescription">Description</label>
+        <input
+          id="datasetDescription"
+          type="text"
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          placeholder="Short summary of this dataset"
+        />
+
         <label htmlFor="csvInput">Dataset CSV</label>
         <input id="csvInput" type="file" accept=".csv" onChange={handleFileUpload} />
       </div>

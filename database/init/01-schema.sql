@@ -44,10 +44,31 @@ CREATE TABLE IF NOT EXISTS glosses (
 CREATE TABLE IF NOT EXISTS datasets (
   dataset_id SERIAL PRIMARY KEY,
   dataset_name VARCHAR(150) NOT NULL,
+  description TEXT,
   lang_id INT NOT NULL REFERENCES languages(lang_id) ON DELETE CASCADE,
   owner_user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   is_public BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS dataset_access_requests (
+  request_id SERIAL PRIMARY KEY,
+  dataset_id INT NOT NULL REFERENCES datasets(dataset_id) ON DELETE CASCADE,
+  requester_user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  resolved_at TIMESTAMP,
+  resolved_by INT REFERENCES users(user_id),
+  UNIQUE(dataset_id, requester_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS dataset_access_grants (
+  grant_id SERIAL PRIMARY KEY,
+  dataset_id INT NOT NULL REFERENCES datasets(dataset_id) ON DELETE CASCADE,
+  grantee_user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  granted_by_user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(dataset_id, grantee_user_id)
 );
 
 CREATE TABLE IF NOT EXISTS dataset_rows (
@@ -87,6 +108,10 @@ CREATE TABLE IF NOT EXISTS study_session_rows (
   word_index INT NOT NULL,
   row_mode VARCHAR(20) NOT NULL DEFAULT 'treatment',
   row_dataset_id INT REFERENCES datasets(dataset_id),
+  source_row_index INT,
+  transcript TEXT,
+  previous_segmentation TEXT,
+  previous_gloss TEXT,
   segmentation TEXT,
   gloss TEXT,
   translation TEXT,
@@ -110,6 +135,11 @@ CREATE TABLE IF NOT EXISTS corrections (
 );
 CREATE INDEX IF NOT EXISTS idx_corrections_lookup ON corrections(lang_id, segmentation);
 CREATE INDEX IF NOT EXISTS idx_datasets_owner_visibility ON datasets(owner_user_id, is_public);
+CREATE INDEX IF NOT EXISTS idx_dataset_access_requests_dataset ON dataset_access_requests(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_dataset_access_requests_requester ON dataset_access_requests(requester_user_id);
+CREATE INDEX IF NOT EXISTS idx_dataset_access_grants_dataset ON dataset_access_grants(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_dataset_access_grants_grantee ON dataset_access_grants(grantee_user_id);
 CREATE INDEX IF NOT EXISTS idx_dataset_rows_dataset_row_index ON dataset_rows(dataset_id, row_index);
 CREATE INDEX IF NOT EXISTS idx_study_sessions_user_completed ON study_sessions(user_id, completed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_study_sessions_run_id ON study_sessions(run_id);
+CREATE INDEX IF NOT EXISTS idx_study_session_rows_source ON study_session_rows(row_dataset_id, source_row_index);

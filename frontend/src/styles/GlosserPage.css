@@ -392,6 +392,21 @@ body {
   text-transform: uppercase;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.completed-session-actions {
+  gap: 10px;
+  align-items: center;
+}
+
+.completed-session-actions .btn-inline {
+  margin: 0;
+}
+
 /* Gloss input wrapper */
 .gloss-input-wrapper {
   position: relative;
@@ -505,6 +520,15 @@ body {
 @media (max-width: 900px) {
   .data-controls-inline {
     grid-template-columns: 1fr;
+  }
+
+  .completed-session-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .completed-session-actions .btn-inline {
+    text-align: center;
   }
 }
 

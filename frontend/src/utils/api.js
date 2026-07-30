@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_ROOT = process.env.REACT_APP_API_URL || 'http://localhost:5001';
+const API_ROOT = process.env.REACT_APP_API_URL || '';
 const API_BASE_URL = `${API_ROOT}/api`;
 const AUTH_STORAGE_KEY = 'glossassist_auth';
 
@@ -85,7 +85,7 @@ export const fetchCodeRequests = async () => {
 export const updateCodeRequestStatus = async (requestId, status) => {
   try {
     const response = await apiClient.patch(`/admin/code-requests/${requestId}`, { status });
-    return response.data.data;
+    return response.data;
   } catch (error) {
     handleError(error, 'Failed to update code request status');
   }
@@ -128,6 +128,60 @@ export const fetchDatasets = async () => {
   }
 };
 
+export const requestDatasetAccess = async (datasetId) => {
+  try {
+    const response = await apiClient.post(`/datasets/${datasetId}/access-request`);
+    return response.data.data;
+  } catch (error) {
+    handleError(error, 'Failed to request dataset access');
+  }
+};
+
+export const fetchIncomingDatasetAccessRequests = async () => {
+  try {
+    const response = await apiClient.get('/datasets/access-requests/incoming');
+    return response.data.data || [];
+  } catch (error) {
+    handleError(error, 'Failed to fetch incoming dataset access requests');
+  }
+};
+
+export const fetchOutgoingDatasetAccessRequests = async () => {
+  try {
+    const response = await apiClient.get('/datasets/access-requests/outgoing');
+    return response.data.data || [];
+  } catch (error) {
+    handleError(error, 'Failed to fetch outgoing dataset access requests');
+  }
+};
+
+export const fetchDatasetAccessGrants = async () => {
+  try {
+    const response = await apiClient.get('/datasets/access-grants');
+    return response.data.data || [];
+  } catch (error) {
+    handleError(error, 'Failed to fetch dataset access grants');
+  }
+};
+
+export const revokeDatasetAccessGrant = async (grantId) => {
+  try {
+    const response = await apiClient.delete(`/datasets/access-grants/${grantId}`);
+    return response.data.data;
+  } catch (error) {
+    handleError(error, 'Failed to revoke dataset access grant');
+  }
+};
+
+export const updateDatasetAccessRequestStatus = async (requestId, status) => {
+  try {
+    const response = await apiClient.patch(`/datasets/access-requests/${requestId}`, { status });
+    return response.data.data;
+  } catch (error) {
+    handleError(error, 'Failed to update dataset access request status');
+  }
+};
+
 // Gloss APIs
 export const fetchGlosses = async ({ datasetId, limit, mode = 'treatment' }) => {
   try {
@@ -163,11 +217,12 @@ export const updateDatasetRow = async ({ datasetId, rowIndex, segmentation, glos
   }
 };
 
-export const uploadGlosses = async ({ language, datasetName, data }) => {
+export const uploadGlosses = async ({ language, datasetName, description, data }) => {
   try {
     const response = await apiClient.post('/upload_glosses', {
       language,
       datasetName,
+      description,
       data
     });
     return response.data;
@@ -212,6 +267,24 @@ export const fetchStudyComparisonReport = async (sessionId) => {
   }
 };
 
+export const submitStudySessionFeedback = async (sessionId, payload) => {
+  try {
+    const response = await apiClient.post(`/study-sessions/${sessionId}/feedback`, payload);
+    return response.data;
+  } catch (error) {
+    handleError(error, 'Failed to save study session feedback');
+  }
+};
+
+export const fetchStudySessionFeedback = async (sessionId) => {
+  try {
+    const response = await apiClient.get(`/study-sessions/${sessionId}/feedback`);
+    return response.data.feedback || null;
+  } catch (error) {
+    handleError(error, 'Failed to fetch study session feedback');
+  }
+};
+
 export const getStudyRunSessions = async (runId) => {
   try {
     const response = await apiClient.get('/study-sessions', {
@@ -247,27 +320,72 @@ export const submitCorrections = async (language, corrections) => {
   }
 };
 
-// Prediction API (direct to Flask inference server)
-const INFERENCE_API_BASE = process.env.REACT_APP_INFERENCE_API_BASE || 'http://localhost:5050';
-
 export const fetchModels = async () => {
   try {
-    const response = await axios.get(`${INFERENCE_API_BASE}/models`);
+    const response = await apiClient.get('/models');
     return response.data.models || [];
   } catch (error) {
     // Inference server might not be running — return empty list
-    console.warn('Inference server not available:', error.message);
+    console.warn('Inference server not available:', error.message || error);
     return [];
   }
 };
 
-export const predictGloss = async (model, transcript, language) => {
+export const initSessionLexicon = async ({ sessionKey, defaultLexiconSource, defaultLexiconFilename, forceReset = false, lexiconPath }) => {
   try {
-    const response = await axios.post(`${INFERENCE_API_BASE}/${model}/predict`, {
-      transcript,
-      language
+    const response = await apiClient.post('/session-lexicon/init', {
+      sessionKey,
+      ...(defaultLexiconSource ? { defaultLexiconSource } : {}),
+      ...(defaultLexiconFilename ? { defaultLexiconFilename } : {}),
+      ...(lexiconPath ? { lexiconPath } : {}),
+      ...(forceReset ? { forceReset: true } : {})
     });
-    return response.data; // { segmentation, gloss }
+    return response.data;
+  } catch (error) {
+    handleError(error, 'Failed to initialize session lexicon');
+  }
+};
+
+export const updateSessionLexicon = async ({ sessionKey, corrections, defaultLexiconSource, defaultLexiconFilename, lexiconPath }) => {
+  try {
+    const response = await apiClient.post('/session-lexicon/update', {
+      sessionKey,
+      corrections,
+      ...(defaultLexiconSource ? { defaultLexiconSource } : {}),
+      ...(defaultLexiconFilename ? { defaultLexiconFilename } : {}),
+      ...(lexiconPath ? { lexiconPath } : {})
+    });
+    return response.data;
+  } catch (error) {
+    handleError(error, 'Failed to update session lexicon');
+  }
+};
+
+export const predictGloss = async (model, transcript, language, options = {}) => {
+  const {
+    retrievalModelPath,
+    pointerModelPath,
+    pointerFilename,
+    lexiconPath,
+    sessionKey,
+    defaultLexiconSource,
+    defaultLexiconFilename
+  } = options;
+
+  try {
+    const response = await apiClient.post('/predict', {
+      model,
+      transcript,
+      language,
+      ...(retrievalModelPath ? { retrievalModelPath } : {}),
+      ...(pointerModelPath ? { pointerModelPath } : {}),
+      ...(pointerFilename ? { pointerFilename } : {}),
+      ...(lexiconPath ? { lexiconPath } : {}),
+      ...(sessionKey ? { sessionKey } : {}),
+      ...(defaultLexiconSource ? { defaultLexiconSource } : {}),
+      ...(defaultLexiconFilename ? { defaultLexiconFilename } : {})
+    });
+    return response.data.data; // { segmentation, gloss }
   } catch (error) {
     handleError(error, 'Failed to get model prediction');
   }

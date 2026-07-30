@@ -5,23 +5,44 @@ const morgan = require('morgan');
 const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const pgp = require('pg-promise')();
+const { createInferenceProxyHelpers } = require('./src/utils/inferenceProxy');
+const { initializeSchema, runInitialAdminBootstrap } = require('./src/utils/startup');
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+const JWT_SECRET = process.env.JWT_SECRET || '';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
+const ADMIN_BOOTSTRAP_USERNAME = (process.env.ADMIN_BOOTSTRAP_USERNAME || '').trim();
+const ADMIN_BOOTSTRAP_EMAIL = (process.env.ADMIN_BOOTSTRAP_EMAIL || '').trim().toLowerCase();
+const ADMIN_BOOTSTRAP_PASSWORD = process.env.ADMIN_BOOTSTRAP_PASSWORD || '';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const ENFORCE_HTTPS = process.env.ENFORCE_HTTPS === 'true';
+const ENABLE_INFERENCE = process.env.ENABLE_INFERENCE === 'true';
+const JSON_BODY_LIMIT = process.env.API_JSON_BODY_LIMIT || '25mb';
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || '')
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
 
+if (!JWT_SECRET || JWT_SECRET === 'dev-secret-change-me' || JWT_SECRET === 'replace-with-long-random-secret') {
+  throw new Error('JWT_SECRET must be set to a strong, unique value before starting the server');
+}
+
 // Flask inference server URL (no trailing slash)
 const INFERENCE_API_BASE = process.env.INFERENCE_API_BASE || 'http://localhost:8000';
+const ALLOW_LOCAL_INFERENCE_PATHS = process.env.ALLOW_LOCAL_INFERENCE_PATHS === 'true';
+const { buildInferencePayload, handleInferenceProxyError } = createInferenceProxyHelpers({
+  allowLocalInferencePaths: ALLOW_LOCAL_INFERENCE_PATHS
+});
 
 // Middleware
-app.use(helmet());
+app.set('trust proxy', 1);
+app.use(helmet({
+  hsts: NODE_ENV === 'production' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false
+}));
 app.use(cors(
   CORS_ORIGINS.length > 0
     ? {
@@ -35,7 +56,33 @@ app.use(cors(
     : undefined
 ));
 app.use(morgan('combined'));
-app.use(express.json());
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
+
+if (NODE_ENV === 'production' && ENFORCE_HTTPS) {
+  app.use((req, res, next) => {
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    if (forwardedProto && forwardedProto !== 'https') {
+      return res.status(400).json({ error: 'HTTPS is required' });
+    }
+    return next();
+  });
+}
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 25,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication requests. Please try again later.' }
+});
+
+const adminMutationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many privileged requests. Please try again later.' }
+});
 
 // Database configuration
 const dbConfig = process.env.DATABASE_URL
@@ -51,109 +98,6 @@ const dbConfig = process.env.DATABASE_URL
 const db = pgp(dbConfig);
 
 console.log(process.env.HOST);
-
-const initializeSchema = async () => {
-  const schemaSql = `
-    CREATE TABLE IF NOT EXISTS languages (
-      lang_id SERIAL PRIMARY KEY,
-      lang_str VARCHAR(100) UNIQUE NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS users (
-      user_id SERIAL PRIMARY KEY,
-      username VARCHAR(100) UNIQUE NOT NULL,
-      email VARCHAR(255) UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      role VARCHAR(32) NOT NULL DEFAULT 'user',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS registration_codes (
-      id SERIAL PRIMARY KEY,
-      code VARCHAR(64) UNIQUE NOT NULL,
-      is_used BOOLEAN NOT NULL DEFAULT FALSE,
-      used_by INT REFERENCES users(user_id),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      expires_at TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS code_requests (
-      request_id SERIAL PRIMARY KEY,
-      requester_name VARCHAR(255),
-      requester_email VARCHAR(255) NOT NULL,
-      message TEXT,
-      status VARCHAR(40) NOT NULL DEFAULT 'pending',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS datasets (
-      dataset_id SERIAL PRIMARY KEY,
-      dataset_name VARCHAR(150) NOT NULL,
-      lang_id INT NOT NULL REFERENCES languages(lang_id) ON DELETE CASCADE,
-      owner_user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-      is_public BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS dataset_rows (
-      row_id SERIAL PRIMARY KEY,
-      dataset_id INT NOT NULL REFERENCES datasets(dataset_id) ON DELETE CASCADE,
-      row_index INT NOT NULL,
-      transcript TEXT NOT NULL,
-      segmentation TEXT,
-      gloss TEXT,
-      translation TEXT,
-      source VARCHAR(20),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(dataset_id, row_index)
-    );
-
-    CREATE TABLE IF NOT EXISTS study_sessions (
-      session_id SERIAL PRIMARY KEY,
-      user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-      dataset_id INT NOT NULL REFERENCES datasets(dataset_id) ON DELETE CASCADE,
-      run_id VARCHAR(64),
-      study_type VARCHAR(20) NOT NULL DEFAULT 'single',
-      control_dataset_id INT REFERENCES datasets(dataset_id),
-      treatment_dataset_id INT REFERENCES datasets(dataset_id),
-      mode VARCHAR(20) NOT NULL,
-      example_limit INT NOT NULL,
-      total_time_sec INT NOT NULL DEFAULT 0,
-      total_edits INT NOT NULL DEFAULT 0,
-      summary_json JSONB,
-      started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS study_session_rows (
-      id SERIAL PRIMARY KEY,
-      session_id INT NOT NULL REFERENCES study_sessions(session_id) ON DELETE CASCADE,
-      example_order INT NOT NULL,
-      word_index INT NOT NULL,
-      row_mode VARCHAR(20) NOT NULL DEFAULT 'treatment',
-      row_dataset_id INT REFERENCES datasets(dataset_id),
-      segmentation TEXT,
-      gloss TEXT,
-      translation TEXT,
-      source VARCHAR(20),
-      time_spent_sec INT NOT NULL DEFAULT 0
-    );
-  `;
-
-  await db.none(schemaSql);
-  await db.none(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'user'`);
-  await db.none(`ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS run_id VARCHAR(64)`);
-  await db.none(`ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS study_type VARCHAR(20) NOT NULL DEFAULT 'single'`);
-  await db.none(`ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS control_dataset_id INT REFERENCES datasets(dataset_id)`);
-  await db.none(`ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS treatment_dataset_id INT REFERENCES datasets(dataset_id)`);
-  await db.none(`ALTER TABLE study_session_rows ADD COLUMN IF NOT EXISTS row_mode VARCHAR(20) NOT NULL DEFAULT 'treatment'`);
-  await db.none(`ALTER TABLE study_session_rows ADD COLUMN IF NOT EXISTS row_dataset_id INT REFERENCES datasets(dataset_id)`);
-  await db.none(`CREATE INDEX IF NOT EXISTS idx_datasets_owner_visibility ON datasets(owner_user_id, is_public)`);
-  await db.none(`CREATE INDEX IF NOT EXISTS idx_dataset_rows_dataset_row_index ON dataset_rows(dataset_id, row_index)`);
-  await db.none(`CREATE INDEX IF NOT EXISTS idx_study_sessions_user_completed ON study_sessions(user_id, completed_at DESC)`);
-  await db.none(`CREATE INDEX IF NOT EXISTS idx_study_sessions_run_id ON study_sessions(run_id)`);
-};
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers.authorization || '';
@@ -222,7 +166,14 @@ db.connect()
   .then(obj => {
     console.log('Database connection successful');
     obj.done();
-    return initializeSchema();
+    return initializeSchema(db);
+  })
+  .then(() => {
+    return runInitialAdminBootstrap(db, bcrypt, {
+      username: ADMIN_BOOTSTRAP_USERNAME,
+      email: ADMIN_BOOTSTRAP_EMAIL,
+      password: ADMIN_BOOTSTRAP_PASSWORD
+    });
   })
   .then(() => {
     console.log('Schema initialization complete');
@@ -236,8 +187,7 @@ app.use('/api', (req, res, next) => {
     '/health',
     '/auth/login',
     '/auth/register',
-    '/auth/request-code',
-    '/auth/create-code'
+    '/auth/request-code'
   ]);
 
   if (publicPaths.has(req.path)) {
@@ -245,6 +195,14 @@ app.use('/api', (req, res, next) => {
   }
 
   return authenticateToken(req, res, next);
+});
+
+app.use(['/api/models', '/api/predict', '/api/session-lexicon'], (req, res, next) => {
+  if (!ENABLE_INFERENCE) {
+    return res.status(503).json({ error: 'Live inference is disabled' });
+  }
+
+  return next();
 });
 
 // ── Health ────────────────────────────────────────────────────────────────────
@@ -258,7 +216,7 @@ app.get('/api/health', (req, res) => {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-app.post('/api/auth/request-code', async (req, res) => {
+app.post('/api/auth/request-code', authLimiter, async (req, res) => {
   const name = (req.body?.name || '').trim();
   const email = (req.body?.email || '').trim().toLowerCase();
   const message = (req.body?.message || '').trim();
@@ -294,7 +252,7 @@ app.post('/api/auth/request-code', async (req, res) => {
   }
 });
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   const username = (req.body?.username || '').trim();
   const email = (req.body?.email || '').trim().toLowerCase();
   const password = req.body?.password || '';
@@ -374,7 +332,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const identifier = (req.body?.identifier || '').trim().toLowerCase();
   const password = req.body?.password || '';
 
@@ -444,7 +402,7 @@ app.get('/api/auth/me', async (req, res) => {
   }
 });
 
-app.post('/api/auth/create-code', async (req, res) => {
+app.post('/api/auth/create-code', adminMutationLimiter, requireAdmin, async (req, res) => {
   const adminApiKey = process.env.ADMIN_API_KEY || '';
   const providedKey = req.headers['x-admin-api-key'];
 
@@ -491,7 +449,7 @@ app.get('/api/admin/code-requests', requireAdmin, async (req, res) => {
   }
 });
 
-app.patch('/api/admin/code-requests/:id', requireAdmin, async (req, res) => {
+app.patch('/api/admin/code-requests/:id', adminMutationLimiter, requireAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const status = (req.body?.status || '').trim().toLowerCase();
 
@@ -505,19 +463,74 @@ app.patch('/api/admin/code-requests/:id', requireAdmin, async (req, res) => {
   }
 
   try {
-    const updated = await db.oneOrNone(
-      `UPDATE code_requests
-       SET status = $2
-       WHERE request_id = $1
-       RETURNING request_id, requester_email, status`,
-      [requestId, status]
-    );
+    const result = await db.tx(async (trx) => {
+      const existing = await trx.oneOrNone(
+        `SELECT request_id, requester_email, status
+         FROM code_requests
+         WHERE request_id = $1
+         FOR UPDATE`,
+        [requestId]
+      );
+
+      if (!existing) {
+        return { updated: null, generated: null };
+      }
+
+      let updated = existing;
+      if (existing.status !== status) {
+        updated = await trx.one(
+          `UPDATE code_requests
+           SET status = $2
+           WHERE request_id = $1
+           RETURNING request_id, requester_email, status`,
+          [requestId, status]
+        );
+      }
+
+      let generated = null;
+      if (status === 'approved' && existing.status !== 'approved') {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const code = generateRegistrationCode();
+          try {
+            const inserted = await trx.one(
+              `INSERT INTO registration_codes (code, expires_at)
+               VALUES ($1, NOW() + INTERVAL '24 hours')
+               RETURNING code, expires_at`,
+              [code]
+            );
+            generated = inserted;
+            break;
+          } catch (insertErr) {
+            if (insertErr.code !== '23505') {
+              throw insertErr;
+            }
+          }
+        }
+
+        if (!generated) {
+          throw new Error('Unable to generate a unique registration code');
+        }
+      }
+
+      return { updated, generated };
+    });
+
+    const updated = result.updated;
 
     if (!updated) {
       return res.status(404).json({ error: 'Code request not found' });
     }
 
-    return res.json({ success: true, data: updated });
+    return res.json({
+      success: true,
+      data: updated,
+      autoGeneratedCode: result.generated
+        ? {
+            code: result.generated.code,
+            expiresAt: result.generated.expires_at
+          }
+        : null
+    });
   } catch (err) {
     console.error('Failed to update code request status:', err);
     return res.status(500).json({ error: 'Failed to update code request status' });
@@ -542,7 +555,7 @@ app.get('/api/admin/registration-codes', requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/admin/registration-codes', requireAdmin, async (req, res) => {
+app.post('/api/admin/registration-codes', adminMutationLimiter, requireAdmin, async (req, res) => {
   const requestedCode = (req.body?.code || '').trim().toUpperCase();
   const generatedCode = requestedCode || generateRegistrationCode();
 
@@ -579,7 +592,8 @@ app.get('/api/languages', async (req, res) => {
       SELECT DISTINCT l.lang_id, l.lang_str
       FROM languages l
       JOIN datasets d ON d.lang_id = l.lang_id
-      WHERE d.is_public = TRUE OR d.owner_user_id = $1
+      LEFT JOIN dataset_access_grants g ON g.dataset_id = d.dataset_id AND g.grantee_user_id = $1
+      WHERE d.owner_user_id = $1 OR g.grantee_user_id IS NOT NULL
       ORDER BY l.lang_str;
     `;
   try {
@@ -595,39 +609,309 @@ app.get('/api/datasets', async (req, res) => {
   const userId = req.user.userId;
   const isAdmin = req.user.role === 'admin';
 
-  const query = isAdmin
-    ? `
-      SELECT d.dataset_id, d.dataset_name, d.is_public, d.created_at,
+  const query = `
+      SELECT d.dataset_id,
+             d.dataset_name,
+             COALESCE(d.description, '') AS description,
+             d.is_public,
+             d.created_at,
              l.lang_str AS language,
              u.username AS owner_username,
-             COUNT(r.row_id)::INT AS row_count
+             COUNT(r.row_id)::INT AS row_count,
+             (d.owner_user_id = $1) AS is_owner,
+             ${isAdmin ? 'TRUE' : '(g.grantee_user_id IS NOT NULL OR d.owner_user_id = $1)'} AS can_access_data,
+             ${isAdmin ? 'TRUE' : '(d.owner_user_id = $1)'} AS can_edit_data,
+             CASE
+               WHEN d.owner_user_id = $1 THEN 'owner'
+               ${isAdmin ? "WHEN TRUE THEN 'admin'" : "WHEN g.grantee_user_id IS NOT NULL THEN 'granted'"}
+               WHEN req.status = 'pending' THEN 'pending'
+               WHEN req.status = 'approved' THEN 'approved'
+               WHEN req.status = 'rejected' THEN 'rejected'
+               ELSE 'none'
+             END AS access_status
       FROM datasets d
       JOIN languages l ON l.lang_id = d.lang_id
       JOIN users u ON u.user_id = d.owner_user_id
       LEFT JOIN dataset_rows r ON r.dataset_id = d.dataset_id
-      GROUP BY d.dataset_id, d.dataset_name, d.is_public, d.created_at, l.lang_str, u.username
-      ORDER BY d.created_at DESC;
-    `
-    : `
-      SELECT d.dataset_id, d.dataset_name, d.is_public, d.created_at,
-             l.lang_str AS language,
-             u.username AS owner_username,
-             COUNT(r.row_id)::INT AS row_count
-      FROM datasets d
-      JOIN languages l ON l.lang_id = d.lang_id
-      JOIN users u ON u.user_id = d.owner_user_id
-      LEFT JOIN dataset_rows r ON r.dataset_id = d.dataset_id
-      WHERE d.is_public = TRUE OR d.owner_user_id = $1
-      GROUP BY d.dataset_id, d.dataset_name, d.is_public, d.created_at, l.lang_str, u.username
-      ORDER BY d.created_at DESC;
-    `;
+      LEFT JOIN dataset_access_grants g ON g.dataset_id = d.dataset_id AND g.grantee_user_id = $1
+      LEFT JOIN dataset_access_requests req ON req.dataset_id = d.dataset_id AND req.requester_user_id = $1
+      GROUP BY d.dataset_id, d.dataset_name, d.description, d.is_public, d.created_at, l.lang_str, u.username,
+               d.owner_user_id, g.grantee_user_id, req.status
+      ORDER BY d.created_at DESC`;
 
   try {
-    const datasets = isAdmin ? await db.any(query) : await db.any(query, [userId]);
+    const datasets = await db.any(query, [userId]);
     return res.json({ success: true, count: datasets.length, data: datasets });
   } catch (err) {
     console.error('Error fetching datasets:', err);
     return res.status(500).json({ error: 'Failed to retrieve datasets', details: err.message });
+  }
+});
+
+app.post('/api/datasets/:id/access-request', async (req, res) => {
+  const datasetId = Number(req.params.id);
+  const requesterId = req.user.userId;
+
+  if (!datasetId || datasetId <= 0) {
+    return res.status(400).json({ error: 'Invalid dataset id' });
+  }
+
+  try {
+    const dataset = await db.oneOrNone(
+      `SELECT dataset_id, owner_user_id FROM datasets WHERE dataset_id = $1 LIMIT 1`,
+      [datasetId]
+    );
+
+    if (!dataset) {
+      return res.status(404).json({ error: 'Dataset not found' });
+    }
+
+    if (Number(dataset.owner_user_id) === Number(requesterId)) {
+      return res.status(400).json({ error: 'You already own this dataset' });
+    }
+
+    const existingGrant = await db.oneOrNone(
+      `SELECT grant_id FROM dataset_access_grants WHERE dataset_id = $1 AND grantee_user_id = $2 LIMIT 1`,
+      [datasetId, requesterId]
+    );
+
+    if (existingGrant) {
+      return res.status(409).json({ error: 'Access is already granted for this dataset' });
+    }
+
+    const request = await db.one(
+      `INSERT INTO dataset_access_requests (dataset_id, requester_user_id, status, requested_at, resolved_at, resolved_by)
+       VALUES ($1, $2, 'pending', NOW(), NULL, NULL)
+       ON CONFLICT (dataset_id, requester_user_id)
+       DO UPDATE SET
+         status = 'pending',
+         requested_at = NOW(),
+         resolved_at = NULL,
+         resolved_by = NULL
+       RETURNING request_id, dataset_id, requester_user_id, status, requested_at`,
+      [datasetId, requesterId]
+    );
+
+    return res.status(201).json({ success: true, data: request });
+  } catch (err) {
+    console.error('Failed to create access request:', err);
+    return res.status(500).json({ error: 'Failed to create dataset access request' });
+  }
+});
+
+app.get('/api/datasets/access-requests/incoming', async (req, res) => {
+  try {
+    const requests = await db.any(
+      `SELECT r.request_id, r.dataset_id, r.requester_user_id, r.status, r.requested_at, r.resolved_at,
+              d.dataset_name, COALESCE(d.description, '') AS dataset_description,
+              u.username AS requester_username, u.email AS requester_email
+       FROM dataset_access_requests r
+       JOIN datasets d ON d.dataset_id = r.dataset_id
+       JOIN users u ON u.user_id = r.requester_user_id
+       WHERE d.owner_user_id = $1
+       ORDER BY r.requested_at DESC`,
+      [req.user.userId]
+    );
+    return res.json({ success: true, count: requests.length, data: requests });
+  } catch (err) {
+    console.error('Failed to fetch incoming access requests:', err);
+    return res.status(500).json({ error: 'Failed to fetch incoming access requests' });
+  }
+});
+
+app.get('/api/datasets/access-requests/outgoing', async (req, res) => {
+  try {
+    const requests = await db.any(
+      `SELECT r.request_id, r.dataset_id, r.status, r.requested_at, r.resolved_at,
+              d.dataset_name, COALESCE(d.description, '') AS dataset_description,
+              owner.username AS owner_username
+       FROM dataset_access_requests r
+       JOIN datasets d ON d.dataset_id = r.dataset_id
+       JOIN users owner ON owner.user_id = d.owner_user_id
+       WHERE r.requester_user_id = $1
+       ORDER BY r.requested_at DESC`,
+      [req.user.userId]
+    );
+    return res.json({ success: true, count: requests.length, data: requests });
+  } catch (err) {
+    console.error('Failed to fetch outgoing access requests:', err);
+    return res.status(500).json({ error: 'Failed to fetch outgoing access requests' });
+  }
+});
+
+app.get('/api/datasets/access-grants', async (req, res) => {
+  const isAdmin = req.user.role === 'admin';
+  const userId = req.user.userId;
+
+  try {
+    const grants = isAdmin
+      ? await db.any(
+        `SELECT g.grant_id,
+                g.dataset_id,
+                d.dataset_name,
+                g.grantee_user_id,
+                grantee.username AS grantee_username,
+                grantee.email AS grantee_email,
+                g.granted_by_user_id,
+                granter.username AS granted_by_username,
+                g.granted_at,
+                d.owner_user_id,
+                owner.username AS owner_username
+         FROM dataset_access_grants g
+         JOIN datasets d ON d.dataset_id = g.dataset_id
+         JOIN users grantee ON grantee.user_id = g.grantee_user_id
+         JOIN users granter ON granter.user_id = g.granted_by_user_id
+         JOIN users owner ON owner.user_id = d.owner_user_id
+         ORDER BY g.granted_at DESC`
+      )
+      : await db.any(
+        `SELECT g.grant_id,
+                g.dataset_id,
+                d.dataset_name,
+                g.grantee_user_id,
+                grantee.username AS grantee_username,
+                grantee.email AS grantee_email,
+                g.granted_by_user_id,
+                granter.username AS granted_by_username,
+                g.granted_at,
+                d.owner_user_id,
+                owner.username AS owner_username
+         FROM dataset_access_grants g
+         JOIN datasets d ON d.dataset_id = g.dataset_id
+         JOIN users grantee ON grantee.user_id = g.grantee_user_id
+         JOIN users granter ON granter.user_id = g.granted_by_user_id
+         JOIN users owner ON owner.user_id = d.owner_user_id
+         WHERE d.owner_user_id = $1
+         ORDER BY g.granted_at DESC`,
+        [userId]
+      );
+
+    return res.json({ success: true, count: grants.length, data: grants });
+  } catch (err) {
+    console.error('Failed to fetch dataset access grants:', err);
+    return res.status(500).json({ error: 'Failed to fetch dataset access grants' });
+  }
+});
+
+app.delete('/api/datasets/access-grants/:id', async (req, res) => {
+  const grantId = Number(req.params.id);
+
+  if (!grantId || grantId <= 0) {
+    return res.status(400).json({ error: 'Invalid grant id' });
+  }
+
+  try {
+    const grant = await db.oneOrNone(
+      `SELECT g.grant_id, g.dataset_id, g.grantee_user_id, d.owner_user_id
+       FROM dataset_access_grants g
+       JOIN datasets d ON d.dataset_id = g.dataset_id
+       WHERE g.grant_id = $1
+       LIMIT 1`,
+      [grantId]
+    );
+
+    if (!grant) {
+      return res.status(404).json({ error: 'Access grant not found' });
+    }
+
+    const isOwner = Number(grant.owner_user_id) === Number(req.user.userId);
+    const canManage = isOwner || req.user.role === 'admin';
+
+    if (!canManage) {
+      return res.status(403).json({ error: 'Only dataset owner can revoke grants' });
+    }
+
+    await db.tx(async (trx) => {
+      await trx.none(
+        `DELETE FROM dataset_access_grants
+         WHERE grant_id = $1`,
+        [grantId]
+      );
+
+      await trx.none(
+        `UPDATE dataset_access_requests
+         SET status = 'rejected',
+             resolved_at = NOW(),
+             resolved_by = $3
+         WHERE dataset_id = $1
+           AND requester_user_id = $2
+           AND status = 'approved'`,
+        [grant.dataset_id, grant.grantee_user_id, req.user.userId]
+      );
+    });
+
+    return res.json({ success: true, data: { grant_id: grantId } });
+  } catch (err) {
+    console.error('Failed to revoke dataset access grant:', err);
+    return res.status(500).json({ error: 'Failed to revoke dataset access grant' });
+  }
+});
+
+app.patch('/api/datasets/access-requests/:id', async (req, res) => {
+  const requestId = Number(req.params.id);
+  const status = (req.body?.status || '').trim().toLowerCase();
+
+  if (!requestId || requestId <= 0) {
+    return res.status(400).json({ error: 'Invalid request id' });
+  }
+
+  if (!['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'status must be approved or rejected' });
+  }
+
+  try {
+    const requestRow = await db.oneOrNone(
+      `SELECT r.request_id, r.dataset_id, r.requester_user_id, r.status,
+              d.owner_user_id
+       FROM dataset_access_requests r
+       JOIN datasets d ON d.dataset_id = r.dataset_id
+       WHERE r.request_id = $1
+       LIMIT 1`,
+      [requestId]
+    );
+
+    if (!requestRow) {
+      return res.status(404).json({ error: 'Access request not found' });
+    }
+
+    const isOwner = Number(requestRow.owner_user_id) === Number(req.user.userId);
+    const canManage = isOwner || req.user.role === 'admin';
+    if (!canManage) {
+      return res.status(403).json({ error: 'Only dataset owner can manage access requests' });
+    }
+
+    const updated = await db.one(
+      `UPDATE dataset_access_requests
+       SET status = $2,
+           resolved_at = NOW(),
+           resolved_by = $3
+       WHERE request_id = $1
+       RETURNING request_id, dataset_id, requester_user_id, status, requested_at, resolved_at, resolved_by`,
+      [requestId, status, req.user.userId]
+    );
+
+    if (status === 'approved') {
+      await db.none(
+        `INSERT INTO dataset_access_grants (dataset_id, grantee_user_id, granted_by_user_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (dataset_id, grantee_user_id)
+         DO UPDATE SET granted_by_user_id = EXCLUDED.granted_by_user_id, granted_at = NOW()`,
+        [updated.dataset_id, updated.requester_user_id, req.user.userId]
+      );
+    }
+
+    if (status === 'rejected') {
+      await db.none(
+        `DELETE FROM dataset_access_grants
+         WHERE dataset_id = $1 AND grantee_user_id = $2`,
+        [updated.dataset_id, updated.requester_user_id]
+      );
+    }
+
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('Failed to update access request:', err);
+    return res.status(500).json({ error: 'Failed to update dataset access request' });
   }
 });
 
@@ -636,6 +920,7 @@ app.get('/api/datasets', async (req, res) => {
 app.post('/api/upload_glosses', async (req, res) => {
   const language = (req.body?.language || req.body?.lang || '').trim();
   const datasetName = (req.body?.datasetName || req.body?.lang || '').trim();
+  const description = (req.body?.description || '').trim();
   const data = Array.isArray(req.body?.data) ? req.body.data : [];
 
   if (!language || !datasetName) {
@@ -656,7 +941,7 @@ app.post('/api/upload_glosses', async (req, res) => {
       );
 
       const ownerUserId = req.user.userId;
-      const isPublic = req.user.role === 'admin';
+      const isPublic = false;
 
       const existingDataset = await trx.oneOrNone(
         `SELECT dataset_id
@@ -672,17 +957,17 @@ app.post('/api/upload_glosses', async (req, res) => {
         datasetId = existingDataset.dataset_id;
         await trx.none(
           `UPDATE datasets
-           SET lang_id = $2, is_public = $3
+           SET lang_id = $2, is_public = $3, description = $4
            WHERE dataset_id = $1`,
-          [datasetId, langResult.lang_id, isPublic]
+          [datasetId, langResult.lang_id, isPublic, description]
         );
         await trx.none(`DELETE FROM dataset_rows WHERE dataset_id = $1`, [datasetId]);
       } else {
         const insertedDataset = await trx.one(
-          `INSERT INTO datasets (dataset_name, lang_id, owner_user_id, is_public)
-           VALUES ($1, $2, $3, $4)
+          `INSERT INTO datasets (dataset_name, description, lang_id, owner_user_id, is_public)
+           VALUES ($1, $2, $3, $4, $5)
            RETURNING dataset_id`,
-          [datasetName, langResult.lang_id, ownerUserId, isPublic]
+          [datasetName, description, langResult.lang_id, ownerUserId, isPublic]
         );
         datasetId = insertedDataset.dataset_id;
       }
@@ -746,8 +1031,9 @@ app.get('/api/get_glosses', async (req, res) => {
       SELECT d.dataset_id, d.dataset_name, d.is_public, l.lang_str AS language
       FROM datasets d
       JOIN languages l ON l.lang_id = d.lang_id
+      LEFT JOIN dataset_access_grants g ON g.dataset_id = d.dataset_id AND g.grantee_user_id = $2
       WHERE d.dataset_id = $1
-        AND (d.is_public = TRUE OR d.owner_user_id = $2)
+        AND (d.owner_user_id = $2 OR g.grantee_user_id IS NOT NULL)
       LIMIT 1`;
 
   const rowsQueryWithLimit = `
@@ -829,8 +1115,8 @@ app.patch('/api/datasets/:datasetId/rows/:rowIndex', async (req, res) => {
       : await db.oneOrNone(
         `SELECT dataset_id
          FROM datasets
-         WHERE dataset_id = $1
-           AND (is_public = TRUE OR owner_user_id = $2)
+         WHERE datasets.dataset_id = $1
+           AND owner_user_id = $2
          LIMIT 1`,
         [datasetId, req.user.userId]
       );
@@ -916,9 +1202,10 @@ app.post('/api/study-sessions', async (req, res) => {
         const dataset = req.user.role === 'admin'
           ? await trx.oneOrNone(`SELECT dataset_id FROM datasets WHERE dataset_id = $1`, [candidate])
           : await trx.oneOrNone(
-            `SELECT dataset_id FROM datasets
-             WHERE dataset_id = $1
-               AND (is_public = TRUE OR owner_user_id = $2)`,
+            `SELECT datasets.dataset_id FROM datasets
+             LEFT JOIN dataset_access_grants g ON g.dataset_id = datasets.dataset_id AND g.grantee_user_id = $2
+             WHERE datasets.dataset_id = $1
+               AND (datasets.owner_user_id = $2 OR g.grantee_user_id IS NOT NULL)`,
             [candidate, req.user.userId]
           );
 
@@ -954,26 +1241,34 @@ app.post('/api/study-sessions', async (req, res) => {
       const entries = Object.entries(finalData);
       for (const [exampleIndex, data] of entries) {
         const words = data?.words || {};
+        const previousWords = data?.previousWords || {};
         const timeSpentSec = Number(summary.exampleTimes?.[exampleIndex] || 0);
+        const transcript = data?.transcript || null;
         const source = data?.source || null;
         const translation = data?.translation || null;
         const exampleOrder = Number(exampleIndex) + 1;
         const rowMode = (exampleModes?.[exampleIndex] || mode || 'treatment').toLowerCase();
         const rowDatasetId = Number(exampleDatasetIds?.[exampleIndex] || primaryDatasetId || 0) || null;
+        const sourceRowIndex = Number(data?.sourceRowIndex || 0) || null;
 
         for (const [wordIndex, wordData] of Object.entries(words)) {
           await trx.none(
             `INSERT INTO study_session_rows
-               (session_id, example_order, word_index, row_mode, row_dataset_id,
+               (session_id, example_order, word_index, row_mode, row_dataset_id, source_row_index,
+                transcript, previous_segmentation, previous_gloss,
                 segmentation, gloss, translation, source, time_spent_sec)
              VALUES
-               ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+               ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
             [
               session.session_id,
               exampleOrder,
               Number(wordIndex) + 1,
               rowMode,
               rowDatasetId,
+              sourceRowIndex,
+              transcript,
+              previousWords?.[wordIndex]?.segmentation || null,
+              previousWords?.[wordIndex]?.gloss || null,
               wordData?.segmentation || null,
               wordData?.gloss || null,
               translation,
@@ -1089,7 +1384,8 @@ app.get('/api/study-sessions/:id/export', async (req, res) => {
     }
 
     const rows = await db.any(
-      `SELECT example_order, word_index, row_mode, row_dataset_id,
+      `SELECT example_order, word_index, row_mode, row_dataset_id, source_row_index,
+              transcript, previous_segmentation, previous_gloss,
               segmentation, gloss, translation, source, time_spent_sec
        FROM study_session_rows
        WHERE session_id = $1
@@ -1248,6 +1544,104 @@ app.get('/api/study-sessions/:id/comparison-report', async (req, res) => {
   }
 });
 
+app.post('/api/study-sessions/:id/feedback', async (req, res) => {
+  const sessionId = Number(req.params.id);
+  const surveyAnswers = req.body?.surveyAnswers || {};
+  const interviewAnswers = req.body?.interviewAnswers || {};
+
+  if (!sessionId || sessionId <= 0) {
+    return res.status(400).json({ error: 'Invalid session id' });
+  }
+
+  if (typeof surveyAnswers !== 'object' || Array.isArray(surveyAnswers)) {
+    return res.status(400).json({ error: 'surveyAnswers must be an object' });
+  }
+
+  if (typeof interviewAnswers !== 'object' || Array.isArray(interviewAnswers)) {
+    return res.status(400).json({ error: 'interviewAnswers must be an object' });
+  }
+
+  try {
+    const targetSession = req.user.role === 'admin'
+      ? await db.oneOrNone(
+        `SELECT session_id, user_id
+         FROM study_sessions
+         WHERE session_id = $1`,
+        [sessionId]
+      )
+      : await db.oneOrNone(
+        `SELECT session_id, user_id
+         FROM study_sessions
+         WHERE session_id = $1
+           AND user_id = $2`,
+        [sessionId, req.user.userId]
+      );
+
+    if (!targetSession) {
+      return res.status(404).json({ error: 'Study session not found' });
+    }
+
+    const ownerUserId = targetSession.user_id;
+    const feedback = await db.one(
+      `INSERT INTO study_session_feedback (session_id, user_id, survey_answers, interview_answers, updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (session_id)
+       DO UPDATE SET
+         survey_answers = EXCLUDED.survey_answers,
+         interview_answers = EXCLUDED.interview_answers,
+         updated_at = NOW()
+       RETURNING feedback_id, session_id, user_id, created_at, updated_at`,
+      [sessionId, ownerUserId, surveyAnswers, interviewAnswers]
+    );
+
+    return res.status(201).json({ success: true, feedback });
+  } catch (err) {
+    console.error('Failed to save study session feedback:', err);
+    return res.status(500).json({ error: 'Failed to save study session feedback' });
+  }
+});
+
+app.get('/api/study-sessions/:id/feedback', async (req, res) => {
+  const sessionId = Number(req.params.id);
+  if (!sessionId || sessionId <= 0) {
+    return res.status(400).json({ error: 'Invalid session id' });
+  }
+
+  try {
+    const targetSession = req.user.role === 'admin'
+      ? await db.oneOrNone(
+        `SELECT session_id, user_id
+         FROM study_sessions
+         WHERE session_id = $1`,
+        [sessionId]
+      )
+      : await db.oneOrNone(
+        `SELECT session_id, user_id
+         FROM study_sessions
+         WHERE session_id = $1
+           AND user_id = $2`,
+        [sessionId, req.user.userId]
+      );
+
+    if (!targetSession) {
+      return res.status(404).json({ error: 'Study session not found' });
+    }
+
+    const feedback = await db.oneOrNone(
+      `SELECT feedback_id, session_id, user_id, survey_answers, interview_answers, created_at, updated_at
+       FROM study_session_feedback
+       WHERE session_id = $1
+       LIMIT 1`,
+      [sessionId]
+    );
+
+    return res.json({ success: true, feedback: feedback || null });
+  } catch (err) {
+    console.error('Failed to fetch study session feedback:', err);
+    return res.status(500).json({ error: 'Failed to fetch study session feedback' });
+  }
+});
+
 // ── Corrections ───────────────────────────────────────────────────────────────
 //
 // Table required (run once in your DB):
@@ -1323,15 +1717,71 @@ app.post('/api/corrections', async (req, res) => {
   }
 });
 
-// ── Prediction (proxy to Flask inference server) ──────────────────────────────
+// ── Prediction and CWoMP lexicon proxy ───────────────────────────────────────
 //
+// GET /api/models
+// POST /api/session-lexicon/init
+// POST /api/session-lexicon/update
 // POST /api/predict
-// Body: { model: string, transcript: string, language: string }
-// Forwards to Flask at INFERENCE_API_BASE/<model>/predict
-// Returns: { success: true, data: { segmentation, gloss } }
+
+app.get('/api/models', async (req, res) => {
+  try {
+    const flaskResponse = await axios.get(`${INFERENCE_API_BASE}/models`, { timeout: 10000 });
+    return res.json({ success: true, models: flaskResponse.data?.models || [] });
+  } catch (err) {
+    return handleInferenceProxyError(res, err, 'Failed to fetch inference models');
+  }
+});
+
+app.post('/api/session-lexicon/init', async (req, res) => {
+  const sessionKey = req.body?.sessionKey || req.body?.session_key;
+
+  if (!sessionKey) {
+    return res.status(400).json({ error: 'sessionKey is required' });
+  }
+
+  try {
+    const payload = buildInferencePayload(req, {
+      session_key: scopedInferenceSessionKey(req, sessionKey),
+      ...(req.body?.forceReset || req.body?.force_reset ? { force_reset: true } : {})
+    });
+    const flaskResponse = await axios.post(
+      `${INFERENCE_API_BASE}/session-lexicon/init`,
+      payload,
+      { timeout: 30000 }
+    );
+    return res.json({ success: true, data: flaskResponse.data });
+  } catch (err) {
+    return handleInferenceProxyError(res, err, 'Failed to initialize session lexicon');
+  }
+});
+
+app.post('/api/session-lexicon/update', async (req, res) => {
+  const sessionKey = req.body?.sessionKey || req.body?.session_key;
+  const corrections = req.body?.corrections;
+
+  if (!sessionKey || !Array.isArray(corrections)) {
+    return res.status(400).json({ error: 'sessionKey and corrections[] are required' });
+  }
+
+  try {
+    const payload = buildInferencePayload(req, {
+      session_key: scopedInferenceSessionKey(req, sessionKey),
+      corrections
+    });
+    const flaskResponse = await axios.post(
+      `${INFERENCE_API_BASE}/session-lexicon/update`,
+      payload,
+      { timeout: 30000 }
+    );
+    return res.json({ success: true, data: flaskResponse.data });
+  } catch (err) {
+    return handleInferenceProxyError(res, err, 'Failed to update session lexicon');
+  }
+});
 
 app.post('/api/predict', async (req, res) => {
-  const { model, transcript, language } = req.body;
+  const { model, transcript, language, translation } = req.body;
 
   if (!model || !transcript || !language) {
     return res.status(400).json({
@@ -1340,28 +1790,34 @@ app.post('/api/predict', async (req, res) => {
   }
 
   try {
+    const payload = buildInferencePayload(req, {
+      transcript,
+      language,
+      ...(translation ? { translation } : {})
+    });
     const flaskResponse = await axios.post(
       `${INFERENCE_API_BASE}/${encodeURIComponent(model)}/predict`,
-      { transcript, language },
-      { timeout: 30000 } // 30s timeout for inference
+      payload,
+      { timeout: 30000 }
     );
 
-    res.json({ success: true, data: flaskResponse.data });
+    return res.json({ success: true, data: flaskResponse.data });
   } catch (err) {
-    console.error('Prediction proxy error:', err.message);
-
-    // Forward the Flask error status if available
-    const status = err.response?.status || 502;
-    const detail = err.response?.data?.error || err.message;
-
-    res.status(status).json({
-      error: 'Prediction failed',
-      details: detail
-    });
+    return handleInferenceProxyError(res, err, 'Prediction failed');
   }
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
+
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large' || err?.status === 413) {
+    return res.status(413).json({
+      error: `Request body exceeds the ${JSON_BODY_LIMIT} limit.`
+    });
+  }
+
+  return next(err);
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);

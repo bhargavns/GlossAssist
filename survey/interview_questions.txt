@@ -1,0 +1,19 @@
+Basic guiding questions. Intended to be an open-ended interview so questions are subject to context dependent change.
+
+The goal of this interview is to ascertain your perspective on the glossing task you have recently completed for this study. We will ask you some open-ended questions to direct the interview, but feel free to bring up anything you feel is relevant.  You are not required to answer every question if you do not feel it is relevant to your experience.
+
+- Describe your usual process for working with your collected data, and especially for glossing.
+- Describe your first impressions of GlossAssist's predictions appearing.
+- Walk me through a moment where you decided to accept or reject a suggestion. What was going through your mind?
+- Did you notice any patterns (anything interesting?) in the mistakes that GlossAssist made, or in the things that it did well?
+- Was there a moment where you felt like the tool was getting in your way, or where you wanted information that wasn't there?
+- Has working with GlossAssist changed how you think about where automated tools fit into documentation work?
+- Are there any other things you would like to talk about?
+
+Additional questions (suggested):
+- Regarding lexicon transparency: Did you find yourself looking at the retrieved lexical entries and grammatical rules in the left panel? What role did they play in your decisions?
+- When you encountered a prediction you disagreed with, what did you do? How effortful did that feel?
+- Did your relationship with the suggestions change over the course of the session (early on versus later)?"
+- Comparison to no-tool baseline (for novices especially): Can you imagine doing this task without any automated suggestions? How do you think that would have gone?
+- How did you feel about the tool making decisions about morphemes in this language? Did that raise any concerns?
+

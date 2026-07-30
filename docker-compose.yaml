@@ -42,6 +42,7 @@ services:
       REACT_APP_USER_STUDY_MODE: ${REACT_APP_USER_STUDY_MODE:-false}
       REACT_APP_STUDY_LANG_NO_PRED: ${REACT_APP_STUDY_LANG_NO_PRED:-Study_NoPred}
       REACT_APP_STUDY_LANG_WITH_PRED: ${REACT_APP_STUDY_LANG_WITH_PRED:-Study_WithPred}
+      REACT_APP_ENABLE_INFERENCE: ${REACT_APP_ENABLE_INFERENCE:-false}
       CHOKIDAR_USEPOLLING: true  # For file watching on Mac
     volumes:
       - ./frontend:/app

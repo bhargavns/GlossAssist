@@ -8,6 +8,7 @@ function StudyModePage() {
   const [controlDatasetId, setControlDatasetId] = useState('');
   const [treatmentDatasetId, setTreatmentDatasetId] = useState('');
   const [exampleLimit, setExampleLimit] = useState(5);
+  const [randomSampleEnabled, setRandomSampleEnabled] = useState(false);
   const [shuffleEnabled, setShuffleEnabled] = useState(true);
   const [error, setError] = useState('');
 
@@ -15,7 +16,8 @@ function StudyModePage() {
     const loadDatasets = async () => {
       try {
         const rows = await fetchDatasets();
-        setDatasets(rows || []);
+        const accessibleRows = (rows || []).filter((dataset) => Boolean(dataset.can_access_data));
+        setDatasets(accessibleRows);
       } catch (err) {
         setError(String(err));
       }
@@ -54,6 +56,7 @@ function StudyModePage() {
       shuffle: shuffleEnabled,
       currentPart: 0,
       exampleLimit: numericLimit,
+      randomSample: randomSampleEnabled,
       controlDatasetId: Number(controlDatasetId),
       treatmentDatasetId: Number(treatmentDatasetId),
       controlDatasetName: controlDataset?.dataset_name || `Dataset ${controlDatasetId}`,
@@ -147,6 +150,16 @@ function StudyModePage() {
             onChange={(event) => setExampleLimit(event.target.value)}
           />
 
+          <label htmlFor="studyRandomSample">Example Selection</label>
+          <select
+            id="studyRandomSample"
+            value={randomSampleEnabled ? 'random' : 'first'}
+            onChange={(event) => setRandomSampleEnabled(event.target.value === 'random')}
+          >
+            <option value="first">First N rows in each dataset</option>
+            <option value="random">Random N rows in each dataset</option>
+          </select>
+
           <label htmlFor="studyShuffle">Shuffle Control and Treatment Into One Session</label>
           <select
             id="studyShuffle"
@@ -166,6 +179,10 @@ function StudyModePage() {
           <li>
             <strong>Treatment</strong>
             <p>Transcript with segmentation and gloss pre-populated from the treatment dataset.</p>
+          </li>
+          <li>
+            <strong>Example Selection</strong>
+            <p>Choose either the first N rows or a random N-row sample from each dataset.</p>
           </li>
           <li>
             <strong>Shuffle Option</strong>

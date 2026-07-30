@@ -2,15 +2,27 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   fetchGlosses,
-  fetchDatasets
+  fetchDatasets,
+  fetchModels
 } from "../utils/api";
+import { getCurrentUsername } from "../utils/auth";
+import { inferenceEnabled } from "../utils/featureFlags";
 import "../styles/Dashboard.css";
 
 function Dashboard() {
+  const defaultRetrievalHF = "https://huggingface.co/CMU-Wav2Gloss/retrieval-totonac";
+  const defaultPointerHF = "https://huggingface.co/CMU-Wav2Gloss/pointer-totonac";
+
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
   const [datasets, setDatasets] = useState([]);
   const [datasetExamples, setDatasetExamples] = useState([]);
   const [datasetExamplesLoading, setDatasetExamplesLoading] = useState(false);
+  const [models, setModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState("cwomp");
+  const [retrievalModelPath, setRetrievalModelPath] = useState(defaultRetrievalHF);
+  const [pointerModelPath, setPointerModelPath] = useState(defaultPointerHF);
+  const [defaultLexiconSource, setDefaultLexiconSource] = useState(defaultRetrievalHF);
+  const [defaultLexiconFilename, setDefaultLexiconFilename] = useState("morpheme_lexicon_train.csv");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -21,7 +33,8 @@ function Dashboard() {
       try {
         setLoading(true);
         const datasetsData = await fetchDatasets();
-        setDatasets(datasetsData || []);
+        const editableDatasets = (datasetsData || []).filter((dataset) => Boolean(dataset.can_edit_data));
+        setDatasets(editableDatasets);
         setError(null);
       } catch (err) {
         setError(err);
@@ -31,6 +44,26 @@ function Dashboard() {
     };
 
     loadDashboardData();
+  }, []);
+
+  useEffect(() => {
+    const loadModels = async () => {
+      if (!inferenceEnabled) {
+        return;
+      }
+
+      const availableModels = await fetchModels();
+      if (availableModels.length > 0) {
+        setModels(availableModels);
+        setSelectedModel((currentModel) => (
+          availableModels.includes(currentModel) ? currentModel : availableModels[0]
+        ));
+      } else {
+        setModels(["cwomp"]);
+      }
+    };
+
+    loadModels();
   }, []);
 
   useEffect(() => {
@@ -83,6 +116,23 @@ function Dashboard() {
     });
   };
 
+  const handleStartLiveGlossing = () => {
+    if (!selectedDatasetId || !selectedModel) return;
+
+    const username = getCurrentUsername() || "anonymous";
+    const sessionKey = `${username}-${selectedDatasetId}-${selectedModel}-${Date.now()}`;
+
+    navigate(`/gloss-live/${selectedDatasetId}/${selectedModel}/1`, {
+      state: {
+        hfRetrievalModelPath: retrievalModelPath,
+        hfPointerModelPath: pointerModelPath,
+        defaultLexiconSource,
+        defaultLexiconFilename,
+        sessionKey,
+      }
+    });
+  };
+
   if (loading) {
     return <div className="loading">Loading glossing workspace...</div>;
   }
@@ -126,6 +176,56 @@ function Dashboard() {
             Start From First Example →
           </button>
 
+          {inferenceEnabled && (
+            <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+              <label htmlFor="liveModelSelect">Live model:</label>
+              <select
+                id="liveModelSelect"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+              >
+                {models.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+              <label htmlFor="retrievalModelPath">HF retrieval path:</label>
+              <input
+                id="retrievalModelPath"
+                type="text"
+                value={retrievalModelPath}
+                onChange={(e) => setRetrievalModelPath(e.target.value)}
+                style={{ minWidth: "340px" }}
+              />
+              <label htmlFor="pointerModelPath">HF pointer path:</label>
+              <input
+                id="pointerModelPath"
+                type="text"
+                value={pointerModelPath}
+                onChange={(e) => setPointerModelPath(e.target.value)}
+                style={{ minWidth: "340px" }}
+              />
+              <label htmlFor="defaultLexiconSource">Default lexicon HF source:</label>
+              <input
+                id="defaultLexiconSource"
+                type="text"
+                value={defaultLexiconSource}
+                onChange={(e) => setDefaultLexiconSource(e.target.value)}
+                style={{ minWidth: "340px" }}
+              />
+              <label htmlFor="defaultLexiconFilename">Lexicon filename:</label>
+              <input
+                id="defaultLexiconFilename"
+                type="text"
+                value={defaultLexiconFilename}
+                onChange={(e) => setDefaultLexiconFilename(e.target.value)}
+                style={{ minWidth: "340px" }}
+              />
+              <button onClick={handleStartLiveGlossing} className="start-button">
+                Start Live Inference Session →
+              </button>
+            </div>
+          )}
+
           <div className="table-wrap" style={{ marginTop: '1rem' }}>
             {datasetExamplesLoading ? (
               <p className="no-languages">Loading examples...</p>
@@ -161,7 +261,7 @@ function Dashboard() {
 
       {datasets.length === 0 && !loading && (
         <p className="no-languages">
-          No datasets found. Upload one first, or use the seeded SampleStudyDataset.
+          No editable datasets found. Upload your own dataset to start glossing.
         </p>
       )}
     </div>

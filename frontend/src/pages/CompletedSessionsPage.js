@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
+  fetchStudySessionFeedback,
   fetchSavedStudySessions,
   fetchStudyComparisonReport,
   fetchStudySessionExport
@@ -9,6 +10,8 @@ function CompletedSessionsPage() {
   const [loading, setLoading] = useState(true);
   const [sessions, setSessions] = useState([]);
   const [error, setError] = useState("");
+  const [selectedFeedback, setSelectedFeedback] = useState(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -102,6 +105,62 @@ function CompletedSessionsPage() {
     document.body.removeChild(link);
   };
 
+  const downloadSentenceLevelChangesCsv = async (sessionId) => {
+    const saved = await fetchStudySessionExport(sessionId);
+    const summary = saved.session.summary_json || {};
+    const rowsByExample = new Map();
+
+    (saved.rows || []).forEach((row) => {
+      const exampleRows = rowsByExample.get(row.example_order) || [];
+      exampleRows.push(row);
+      rowsByExample.set(row.example_order, exampleRows);
+    });
+
+    const csvCell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csvRows = [[
+      "Session_ID", "Run_ID", "Username", "Study_Type", "Example_ID", "Mode", "Dataset_ID",
+      "Source_Row_Index", "Transcript", "Previous_Segmentation", "Previous_Gloss",
+      "Updated_Segmentation", "Updated_Gloss", "Translation", "Source", "Time_Spent_Sec",
+      "Edit_Count", "Certainty"
+    ]];
+
+    [...rowsByExample.entries()]
+      .sort(([left], [right]) => Number(left) - Number(right))
+      .forEach(([exampleOrder, exampleRows]) => {
+        const orderedRows = exampleRows.sort((left, right) => Number(left.word_index) - Number(right.word_index));
+        const exampleIndex = Number(exampleOrder) - 1;
+        const firstRow = orderedRows[0];
+        csvRows.push([
+          saved.session.session_id,
+          saved.session.run_id || "",
+          saved.session.username || "anonymous",
+          saved.session.study_type || "single",
+          exampleOrder,
+          firstRow.row_mode || saved.session.mode,
+          firstRow.row_dataset_id || saved.session.dataset_id,
+          firstRow.source_row_index || "",
+          firstRow.transcript || "",
+          orderedRows.map((row) => row.previous_segmentation || "").join(" "),
+          orderedRows.map((row) => row.previous_gloss || "").join(" "),
+          orderedRows.map((row) => row.segmentation || "").join(" "),
+          orderedRows.map((row) => row.gloss || "").join(" "),
+          firstRow.translation || "",
+          firstRow.source || "",
+          firstRow.time_spent_sec || 0,
+          Number(summary.exampleEdits?.[exampleIndex] || 0),
+          summary.exampleUncertain?.[exampleIndex] ? "uncertain" : "certain"
+        ]);
+      });
+
+    const csv = `data:text/csv;charset=utf-8,${csvRows.map((row) => row.map(csvCell).join(",")).join("\n")}`;
+    const link = document.createElement("a");
+    link.setAttribute("href", encodeURI(csv));
+    link.setAttribute("download", `sentence_level_changes_${sessionId}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const downloadComparisonCsv = async (sessionId) => {
     const selectedReport = await fetchStudyComparisonReport(sessionId);
 
@@ -123,6 +182,19 @@ function CompletedSessionsPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const openSurveyDetails = async (sessionId) => {
+    try {
+      setFeedbackLoading(true);
+      setError("");
+      const feedback = await fetchStudySessionFeedback(sessionId);
+      setSelectedFeedback({ sessionId, feedback });
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setFeedbackLoading(false);
+    }
   };
 
   return (
@@ -167,15 +239,23 @@ function CompletedSessionsPage() {
                     <td>{session.total_time_sec}s</td>
                     <td>{new Date(session.completed_at).toLocaleString()}</td>
                     <td>
-                      <button className="btn-inline" onClick={() => downloadSessionCsv(session.session_id)}>
-                        All Changes CSV
-                      </button>{" "}
-                      <button className="btn-inline" onClick={() => downloadExampleCsv(session.session_id)}>
-                        Example CSV
-                      </button>{" "}
-                      <button className="btn-inline" onClick={() => downloadComparisonCsv(session.session_id)}>
-                        Comparison CSV
-                      </button>
+                      <div className="row-actions completed-session-actions">
+                        <button className="btn-inline" onClick={() => downloadSessionCsv(session.session_id)}>
+                          All Changes CSV
+                        </button>
+                        <button className="btn-inline" onClick={() => downloadExampleCsv(session.session_id)}>
+                          Example CSV
+                        </button>
+                        <button className="btn-inline" onClick={() => downloadSentenceLevelChangesCsv(session.session_id)}>
+                          Sentence-Level Changes CSV
+                        </button>
+                        <button className="btn-inline" onClick={() => downloadComparisonCsv(session.session_id)}>
+                          Comparison CSV
+                        </button>
+                        <button className="btn-inline" onClick={() => openSurveyDetails(session.session_id)}>
+                          Survey Details
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -184,6 +264,82 @@ function CompletedSessionsPage() {
           </div>
         )}
       </div>
+
+      {(feedbackLoading || selectedFeedback) && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.55)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 1200,
+            padding: "20px"
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "12px",
+              width: "min(920px, 96vw)",
+              maxHeight: "92vh",
+              overflowY: "auto",
+              padding: "20px"
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>Survey Details</h3>
+            {feedbackLoading ? (
+              <p>Loading survey responses...</p>
+            ) : !selectedFeedback?.feedback ? (
+              <p>No feedback has been submitted for this session yet.</p>
+            ) : (
+              <>
+                <p><strong>Session:</strong> {selectedFeedback.sessionId}</p>
+                <p><strong>Last Updated:</strong> {new Date(selectedFeedback.feedback.updated_at).toLocaleString()}</p>
+
+                <h4>Survey Answers</h4>
+                {Object.keys(selectedFeedback.feedback.survey_answers || {}).length === 0 ? (
+                  <p>No survey answers submitted.</p>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Question ID</th>
+                        <th>Answer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(selectedFeedback.feedback.survey_answers || {}).map(([key, value]) => (
+                        <tr key={key}>
+                          <td>{key}</td>
+                          <td>{String(value)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                <h4 style={{ marginTop: "14px" }}>Interview Answers</h4>
+                {Object.keys(selectedFeedback.feedback.interview_answers || {}).length === 0 ? (
+                  <p>No interview answers submitted.</p>
+                ) : (
+                  Object.entries(selectedFeedback.feedback.interview_answers || {}).map(([key, value]) => (
+                    <div key={key} style={{ marginBottom: "12px" }}>
+                      <p style={{ marginBottom: "4px" }}><strong>{key}</strong></p>
+                      <textarea readOnly value={String(value || "")} rows={7} style={{ width: "100%" }} />
+                    </div>
+                  ))
+                )}
+              </>
+            )}
+
+            <div style={{ marginTop: "12px", textAlign: "right" }}>
+              <button className="btn-inline" onClick={() => setSelectedFeedback(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

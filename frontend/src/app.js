@@ -15,6 +15,7 @@ import AdminConsolePage from './pages/AdminConsolePage';
 import CompletedSessionsPage from './pages/CompletedSessionsPage';
 import { fetchCurrentUser } from './utils/api';
 import { clearStoredAuth, getStoredAuth } from './utils/auth';
+import { inferenceEnabled } from './utils/featureFlags';
 
 function ProtectedRoute({ isAuthed, children }) {
   if (!isAuthed) {
@@ -166,7 +167,7 @@ function App() {
               path="/gloss-live/:language/:model/:example_num"
               element={
                 <ProtectedRoute isAuthed={!!currentUser}>
-                  <LiveGlossingPage />
+                  {inferenceEnabled ? <LiveGlossingPage /> : <Navigate to="/glossing" replace />}
                 </ProtectedRoute>
               }
             />

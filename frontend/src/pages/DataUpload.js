@@ -7,7 +7,7 @@ const DataUpload = () => {
         <h2>Upload Dataset</h2>
         <p>
           Upload a CSV with transcript, segmentation, gloss, translation, and source columns.
-          Datasets uploaded by admins are shared; datasets uploaded by standard users are private.
+          Every dataset is owned by the uploader. Other users can request access from the dataset owner.
         </p>
       </div>
       <GlossTableUpload />

@@ -4,3 +4,10 @@ example2.html
 .env
 node_modules
 .env.example
+
+# Local editor settings and generated build/cache artifacts
+.vscode/
+frontend/build/
+__pycache__/
+*.py[cod]
+docs/eval_test_*.log

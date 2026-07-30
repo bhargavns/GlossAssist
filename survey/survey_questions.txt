@@ -1,0 +1,116 @@
+Answer the following questions as pertains to your experience glossing from scratch using GlossAssist
+
+How much mental and perceptual activity was required (e.g., thinking, deciding, calculating, remembering, looking, searching, etc)? Was the process easy or demanding, simple or complex, exacting or forgiving 
+1 (Low) - 20 (High)
+
+How successful do you think you were in accomplishing the goals of the task? How satisfied were you with your performance in accomplishing these goals?
+1 (Low) - 20 (High)
+
+How hard did you have to work to accomplish your level of performance?
+1 (Low) - 20 (High)
+
+How discouraged, stressed, irritated, and annoyed versus gratified, relaxed, content,
+and complacent did you feel during the process?
+1 (Low) - 20 (High)
+
+GlossAssist’s capabilities meet my requirements.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+Using GlossAssist is a frustrating experience
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+GlossAssist is easy to use
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+
+Answer the following questions as pertains to your experience glossing using 
+GlossAssist with CWoMP predictions (GlossAssist+CWomP)
+
+How much mental and perceptual activity was required (e.g., thinking, deciding, calculating, remembering, looking, searching, etc)? Was the process easy or demanding, simple or complex, exacting or forgiving 
+
+1 (Low) - 20 (High)
+
+How successful do you think you were in accomplishing the goals of the task? How satisfied were you with your performance in accomplishing these goals?
+1 (Low) - 20 (High)
+
+How hard did you have to work to accomplish your level of performance?
+1 (Low) - 20 (High)
+
+How discouraged, stressed, irritated, and annoyed versus gratified, relaxed, content,
+and complacent did you feel during the process?
+1 (Low) - 20 (High)
+
+GlossAssist+CWomP’s capabilities meet my requirements.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+Using GlossAssist+CWomP is a frustrating experience
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+GlossAssist+CWomP is easy to use
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+I have to spend too much time correcting things in GlossAssist+CWomP
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+How much do you think the suggestions from GlossAssist+CWoMP affected your own glossing decisions or confidence in those decisions? Could you talk about a few cases where you noticed yourself paying special attention to those suggestions?
+Text Input
+
+
+Answer the following questions as pertains to your perception of CWoMP
+CWomP is capable of interpreting situations correctly. 
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+CWoMP’s state was always clear to me.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+I already know similar systems to CWoMP
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+The developers are trustworthy.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+One should be careful with unfamiliar automated systems.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+CWoMP works reliably.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+CWoMP reacts unpredictably.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+The developers take my well-being seriously.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+I trust CWoMP
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+A CWoMP malfunction is likely.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+I was able to understand why things happened
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+I rather trust a system than I mistrust it.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+CWoMP is capable of taking over complicated tasks.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+I can rely on the CWoMP.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+CWoMP might make sporadic errors.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+It is difficult to identify what CWoMP will do next.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+I have already used systems similar to CWoMP.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+Automated systems generally work well.
+1 (Strongly Disagree) - 7 (Strongly Agree)
+
+I am confident about CWoMP’s capabilities. 
+1 (Strongly Disagree) - 7 (Strongly Agree)
+

@@ -1,0 +1,69 @@
+{
+  "language": "Totonac",
+  "datasetName": "Totonac-Dev-Sample-2026-06-24",
+  "data": [
+    {
+      "transcript": "Nixkatsí: n pala na: chaná n katsi:ya'.",
+      "segmentation": "ni-x-katsí: n pala na: chaná n katsi:-y-a'",
+      "gloss": "NEG-INDEF-V.know EPEN CONJ also thus EPEN V.know-IPFV-2SBJ.SG",
+      "translation": "I do not know if you know about this.",
+      "source": "dev"
+    },
+    {
+      "transcript": "Antá xa n ta:knú: wa: iyma: mantah anta:ni n ka:stlá:n,",
+      "segmentation": "antá xa n ta:'knú:-0-0 wa: iyma: mantah anta:ni n ka:-stlá:n",
+      "gloss": "there PRN.3SBJ.SG EPEN V.bury-[3SBJ.SG]-[IPFV] FOC DEM Ipomoea.batatas where EPEN PL.OBJ-beautiful",
+      "translation": "Sweet potatoes grow where the soil is good,",
+      "source": "dev"
+    },
+    {
+      "transcript": "na: akxnitá ma: n katlani iyi: n tsukuyi n katlani xamantah, akxnitá n chu: n tla:ni ma:kxtakán.",
+      "segmentation": "na: akxni-tá ma: n katlan-0-0-i iyi: n tsuku-0-y-i n katlan-0-0-i xa-mantah akxni-tá n chu: n tla:n-i ma:kxta-0-kán",
+      "gloss": "also where-ALRD TAG EPEN V.ripen-[3SBJ.SG]-[IPFV]-JNCT ALRD EPEN V.begin-[3SBJ.SG]-IPFV-JNCT EPEN V.ripen-[3SBJ.SG]-[IPFV]-JNCT DET-Ipomoea.batatas when-ALRD EPEN PTCL EPEN good-JNCT V.dig-[3SBJ.SG]-INDEF",
+      "translation": "the sweet potatoes have already developed and can be dug up.",
+      "source": "dev"
+    },
+    {
+      "transcript": "Sebastián López Cano.",
+      "segmentation": "Sebastián López Cano",
+      "gloss": "Sebastían López Cano",
+      "translation": "Sebastián López Cano.",
+      "source": "dev"
+    },
+    {
+      "transcript": "Na: ti:pa:'tú iyma: anani iyma: mantah.",
+      "segmentation": "na: ti:pa:'-tú iyma: anan-0-0-i iyma: mantah.",
+      "gloss": "also CLF-two DEM V.exist-[3SBJ.SG]-[IPFV]-JNCT DEM Ipomoea.batatas",
+      "translation": "There are two types of sweet potatoes.",
+      "source": "dev"
+    },
+    {
+      "transcript": "li:ma:putswa'niqo:'kani nayi ma: la:wanima:'wi n *conejo**.",
+      "segmentation": "li:-ma:-put-s-wa'-ni-qo:'-kan-i nayi ma: la:-wan-ni-ma:'-a:'w-i n *conejo**",
+      "gloss": "INS-CAUS-V.forage-DIM-V.eat-DAT-3SBJ.PL-INDEF-JNCT as TAG RECP-V.say-BEN-PROG-1SBJ.PL-JNCT EPEN rabbit",
+      "translation": "used as fodder for rabbits.",
+      "source": "dev"
+    },
+    {
+      "transcript": "anani iyma: mantah jkinka:chiki:nkán.",
+      "segmentation": "anan-0-0-i iyma: mantah j-ki-n-ka:-chiki-:n-kán",
+      "gloss": "V.exist-[3SBJ.SG]-[IPFV]-JNCT DEM Ipomoea.batatas LOC-1POSS-EPEN-PL.OBJ-house-PL-PL.POSS",
+      "translation": "in our village there are sweet potatoes.",
+      "source": "dev"
+    },
+    {
+      "transcript": "Pus chaná iyma: li:qalhchiwi:nama:'wi iyma: ni...,",
+      "segmentation": "pus chaná iyma: li:-qalh-chiwi:-na-ma:'-a:'w-i iyma: ni-",
+      "gloss": "INTJ thus DEM INS-mouth-V.talk-ANTIP-PROG-1SBJ.PL-JNCT DEM NEG-",
+      "translation": "This is how we talk about this, there are not",
+      "source": "dev"
+    },
+    {
+      "transcript": "Epifania Sáhinos Pérez.",
+      "segmentation": "Epifania Sáhinos Pérez",
+      "gloss": "Epifania Sáhinos Pérez",
+      "translation": "Epifania Sáhinos Pérez.",
+      "source": "dev"
+    }
+  ]
+}

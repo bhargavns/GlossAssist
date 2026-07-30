@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { fetchGlosses, fetchCorrectionsAPI, submitCorrections, predictGloss } from "../utils/api";
+import { useParams, useNavigate, Link, useLocation } from "react-router-dom";
+import {
+  fetchGlosses,
+  fetchCorrectionsAPI,
+  submitCorrections,
+  predictGloss,
+  initSessionLexicon,
+  updateSessionLexicon
+} from "../utils/api";
 import { getCurrentUsername } from "../utils/auth";
 import "../styles/GlossingPage.css";
 
@@ -73,6 +80,15 @@ function GlossInput({ value, segmentation, modelPrediction, suggestions = [], on
 function LiveGlossingPage() {
   const { language, model, example_num } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [datasetLanguage, setDatasetLanguage] = useState("");
+
+  const hfRetrievalModelPath = location.state?.hfRetrievalModelPath || "";
+  const hfPointerModelPath = location.state?.hfPointerModelPath || "";
+  const hfLexiconPath = location.state?.hfLexiconPath || "";
+  const defaultLexiconSource = location.state?.defaultLexiconSource || "";
+  const defaultLexiconFilename = location.state?.defaultLexiconFilename || "morpheme_lexicon_train.csv";
+  const sessionKey = location.state?.sessionKey || `${getCurrentUsername() || "anonymous"}-${language}-${model}`;
 
   // --- Data ---
   const [glosses, setGlosses] = useState([]);          // raw examples (transcript + source)
@@ -82,6 +98,8 @@ function LiveGlossingPage() {
   // --- Per-example prediction state ---
   const [predicting, setPredicting] = useState(false);
   const [predictionError, setPredictionError] = useState(null);
+  const [sessionLexiconReady, setSessionLexiconReady] = useState(false);
+  const [sessionLexiconError, setSessionLexiconError] = useState(null);
 
   // --- Session & Timer ---
   const [timers, setTimers] = useState({});
@@ -104,6 +122,31 @@ function LiveGlossingPage() {
   const currentIndex = parseInt(example_num) - 1;
   const currentGloss = glosses[currentIndex];
 
+  const navigateToExample = useCallback((oneBasedExampleIndex) => {
+    navigate(`/gloss-live/${language}/${model}/${oneBasedExampleIndex}`, {
+      state: {
+        ...location.state,
+        hfRetrievalModelPath,
+        hfPointerModelPath,
+        hfLexiconPath,
+        defaultLexiconSource,
+        defaultLexiconFilename,
+        sessionKey,
+      }
+    });
+  }, [
+    navigate,
+    language,
+    model,
+    location.state,
+    hfRetrievalModelPath,
+    hfPointerModelPath,
+    hfLexiconPath,
+    defaultLexiconSource,
+    defaultLexiconFilename,
+    sessionKey,
+  ]);
+
   const formatTime = (seconds) => {
     if (!seconds) return "00:00";
     const mins = Math.floor(seconds / 60);
@@ -113,23 +156,33 @@ function LiveGlossingPage() {
 
   // ── Fetch corrections for a segment ──
   const fetchCorrections = useCallback(async (segmentation) => {
-    if (!segmentation || !language) return;
+    const langForInference = datasetLanguage || String(language);
+    if (!segmentation || !langForInference) return;
     try {
-      const data = await fetchCorrectionsAPI(language, segmentation);
+      const data = await fetchCorrectionsAPI(langForInference, segmentation);
       setCorrectionsCache(prev => ({ ...prev, [segmentation]: data }));
     } catch { /* non-critical */ }
-  }, [language]);
+  }, [datasetLanguage, language]);
 
   // ── Run prediction for a given example index ──
   const runPrediction = useCallback(async (index) => {
     const example = glosses[index];
     if (!example || !model) return;
+    if (!sessionLexiconReady) return;
 
     setPredicting(true);
     setPredictionError(null);
 
     try {
-      const result = await predictGloss(model, example.transcript, language);
+      const langForInference = datasetLanguage || String(language);
+      const result = await predictGloss(model, example.transcript, langForInference, {
+        retrievalModelPath: hfRetrievalModelPath,
+        pointerModelPath: hfPointerModelPath,
+        lexiconPath: hfLexiconPath,
+        sessionKey,
+        defaultLexiconSource,
+        defaultLexiconFilename
+      });
       // result: { segmentation: "mor-phe-me ...", gloss: "GLOSS1 GLOSS2 ..." }
 
       // Build word-level data from the prediction
@@ -168,13 +221,51 @@ function LiveGlossingPage() {
       // Pre-fetch corrections for every predicted segment
       segWords.forEach(seg => { if (seg) fetchCorrections(seg); });
     } catch (err) {
-      setPredictionError(err.message || 'Prediction failed');
+      setPredictionError(err.message || String(err) || 'Prediction failed');
     } finally {
       setPredicting(false);
     }
-  }, [glosses, model, language, fetchCorrections]);
+  }, [
+    glosses,
+    model,
+    language,
+    datasetLanguage,
+    fetchCorrections,
+    hfRetrievalModelPath,
+    hfPointerModelPath,
+    hfLexiconPath,
+    sessionKey,
+    defaultLexiconSource,
+    defaultLexiconFilename,
+    sessionLexiconReady,
+  ]);
 
   // ── 1. Load examples (transcripts only — no pre-computed glosses) ──
+  useEffect(() => {
+    let cancelled = false;
+
+    const initLexiconForSession = async () => {
+      setSessionLexiconReady(false);
+      setSessionLexiconError(null);
+      try {
+        await initSessionLexicon({
+          sessionKey,
+          defaultLexiconSource,
+          defaultLexiconFilename,
+          lexiconPath: hfLexiconPath,
+          forceReset: false,
+        });
+        if (!cancelled) setSessionLexiconReady(true);
+      } catch (err) {
+        if (!cancelled) setSessionLexiconError(err.message || String(err) || "Session lexicon initialization failed");
+      }
+    };
+
+    initLexiconForSession();
+
+    return () => { cancelled = true; };
+  }, [sessionKey, defaultLexiconSource, defaultLexiconFilename, hfLexiconPath]);
+
   useEffect(() => {
     const loadGlosses = async () => {
       try {
@@ -182,6 +273,7 @@ function LiveGlossingPage() {
         const response = await fetchGlosses({ datasetId: Number(language), limit: 100, mode: 'treatment' });
         const rows = response.data || [];
         setGlosses(rows);
+        setDatasetLanguage(response.dataset?.language || String(language));
 
         const initialTimers = {};
         rows.forEach((_, index) => { initialTimers[index] = 0; });
@@ -199,7 +291,7 @@ function LiveGlossingPage() {
 
   // ── 2. On navigation to a new example: run prediction (unless already cached or edited) ──
   useEffect(() => {
-    if (loading || !currentGloss) return;
+    if (loading || !currentGloss || !sessionLexiconReady) return;
 
     // Restore previously saved edits if they exist
     const savedEdits = allEdits[currentIndex];
@@ -229,19 +321,20 @@ function LiveGlossingPage() {
     allEdits,
     allOriginalData,
     submittedIndices,
-    runPrediction
+    runPrediction,
+    sessionLexiconReady
   ]);
 
   // ── 3. Timer ──
   useEffect(() => {
     let interval;
-    if (!isPaused && !loading && !predicting && !submittedIndices.has(currentIndex)) {
+    if (!isPaused && !loading && sessionLexiconReady && !predicting && !submittedIndices.has(currentIndex)) {
       interval = setInterval(() => {
         setTimers(prev => ({ ...prev, [currentIndex]: (prev[currentIndex] || 0) + 1 }));
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [isPaused, loading, predicting, currentIndex, submittedIndices]);
+  }, [isPaused, loading, sessionLexiconReady, predicting, currentIndex, submittedIndices]);
 
   // ── 4. Input handlers ──
   const handleWordEdit = (wordIndex, field, value) => {
@@ -283,10 +376,20 @@ function LiveGlossingPage() {
 
     if (changed.length > 0) {
       try {
-        await submitCorrections(language, changed);
+        const langForInference = datasetLanguage || String(language);
+        await submitCorrections(langForInference, changed);
+        await updateSessionLexicon({
+          sessionKey,
+          corrections: changed,
+          defaultLexiconSource,
+          defaultLexiconFilename,
+          lexiconPath: hfLexiconPath,
+        });
+        setSessionLexiconError(null);
         await Promise.all(changed.map(c => fetchCorrections(c.segmentation)));
       } catch (err) {
         console.warn('Failed to save corrections:', err);
+        setSessionLexiconError(err.message || String(err) || 'Failed to update session lexicon');
       }
     }
 
@@ -304,7 +407,7 @@ function LiveGlossingPage() {
         });
       }
 
-      navigate(`/gloss-live/${language}/${model}/${nextIndex + 1}`);
+      navigateToExample(nextIndex + 1);
     }
   };
 
@@ -363,7 +466,7 @@ function LiveGlossingPage() {
     });
     setSessionData({
       username: getCurrentUsername(),
-      language,
+      language: datasetLanguage || String(language),
       model,
       totalExamples: glosses.length,
       exampleTimes: timers,
@@ -411,7 +514,7 @@ function LiveGlossingPage() {
       <div className="glossing-header">
         <button onClick={() => navigate('/glossing')} className="btn-exit">← Exit Session</button>
         <h2>
-          {language} Glossing
+          {(datasetLanguage || language)} Glossing
           <span className="model-badge">{model}</span>
         </h2>
         <div className="timer-display">
@@ -419,7 +522,7 @@ function LiveGlossingPage() {
           <button
             onClick={() => setIsPaused(!isPaused)}
             className="btn-icon"
-            disabled={isCurrentSubmitted || predicting}
+            disabled={isCurrentSubmitted || predicting || !sessionLexiconReady}
           >
             {isPaused || isCurrentSubmitted ? "▶" : "⏸"}
           </button>
@@ -433,7 +536,7 @@ function LiveGlossingPage() {
             <div
               key={idx}
               className={`progress-segment ${submittedIndices.has(idx) ? 'completed' : ''} ${idx === currentIndex ? 'active' : ''}`}
-              onClick={() => navigate(`/gloss-live/${language}/${model}/${idx + 1}`)}
+              onClick={() => navigateToExample(idx + 1)}
               title={`Example ${idx + 1}`}
             />
           ))}
@@ -461,7 +564,16 @@ function LiveGlossingPage() {
           </h3>
 
           {/* Prediction spinner overlay */}
-          {predicting ? (
+          {!sessionLexiconReady && !sessionLexiconError ? (
+            <div className="prediction-loading">
+              <div className="spinner" />
+              <p>Preparing session lexicon…</p>
+            </div>
+          ) : sessionLexiconError && !allOriginalData[currentIndex] ? (
+            <div className="prediction-error">
+              <p>⚠ Session lexicon unavailable: {sessionLexiconError}</p>
+            </div>
+          ) : predicting ? (
             <div className="prediction-loading">
               <div className="spinner" />
               <p>Running model inference…</p>
@@ -524,13 +636,13 @@ function LiveGlossingPage() {
           <div className="nav-controls">
             <button
               disabled={currentIndex === 0}
-              onClick={() => navigate(`/gloss-live/${language}/${model}/${currentIndex}`)}
+              onClick={() => navigateToExample(currentIndex)}
             >
               ← Prev
             </button>
             <button
               disabled={currentIndex === glosses.length - 1}
-              onClick={() => navigate(`/gloss-live/${language}/${model}/${currentIndex + 2}`)}
+              onClick={() => navigateToExample(currentIndex + 2)}
             >
               Next →
             </button>
@@ -554,7 +666,7 @@ function LiveGlossingPage() {
             <button
               className="btn btn-success"
               onClick={handleSubmitExample}
-              disabled={predicting}
+              disabled={predicting || !sessionLexiconReady}
             >
               Submit Example
             </button>

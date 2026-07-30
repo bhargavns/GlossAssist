@@ -6,10 +6,12 @@ import {
   fetchStudyComparisonReport,
   fetchStudySessionExport,
   saveStudySession,
+  submitStudySessionFeedback,
   updateDatasetRow,
   submitCorrections
 } from "../utils/api";
 import { getCurrentUsername } from "../utils/auth";
+import { interviewQuestions, surveyQuestionSections } from "../data/studyFeedbackQuestions";
 import "../styles/GlossingPage.css";
 
 function GlossInput({ value, modelPrediction, suggestions = [], onChange, disabled }) {
@@ -98,6 +100,14 @@ function shuffleArray(input) {
   return arr;
 }
 
+function selectExamples(rows, limit, randomSample) {
+  if (!randomSample || rows.length <= limit) {
+    return rows.slice(0, limit);
+  }
+
+  return shuffleArray(rows).slice(0, limit);
+}
+
 function normalizeError(err) {
   if (!err) return "Unknown error";
   if (typeof err === "string") return err;
@@ -135,6 +145,7 @@ function GlossingPage() {
   const mode = (location.state?.mode || activePart?.mode || "treatment").toLowerCase();
   const datasetId = Number(location.state?.datasetId || activePart?.datasetId || datasetParam || 0);
   const exampleLimit = Number(location.state?.exampleLimit || studyFlow?.exampleLimit || 100);
+  const randomSample = Boolean(location.state?.randomSample ?? studyFlow?.randomSample);
 
   const runId = studyFlow?.runId || null;
   const controlDatasetId = Number(studyFlow?.controlDatasetId || 0) || null;
@@ -157,6 +168,12 @@ function GlossingPage() {
   const [savingSession, setSavingSession] = useState(false);
   const [sessionSaveError, setSessionSaveError] = useState("");
   const [comparisonReport, setComparisonReport] = useState(null);
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackError, setFeedbackError] = useState("");
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [surveyAnswers, setSurveyAnswers] = useState({});
+  const [interviewAnswers, setInterviewAnswers] = useState({});
   const [savingGlossRow, setSavingGlossRow] = useState(false);
   const [glossSaveError, setGlossSaveError] = useState("");
   const [glossSaveStatus, setGlossSaveStatus] = useState("");
@@ -191,6 +208,12 @@ function GlossingPage() {
     setSavingSession(false);
     setSessionSaveError("");
     setComparisonReport(null);
+    setFeedbackModalOpen(false);
+    setFeedbackSubmitting(false);
+    setFeedbackError("");
+    setFeedbackSubmitted(false);
+    setSurveyAnswers({});
+    setInterviewAnswers({});
     setSavingGlossRow(false);
     setGlossSaveError("");
     setGlossSaveStatus("");
@@ -259,11 +282,11 @@ function GlossingPage() {
           }
 
           const [controlResponse, treatmentResponse] = await Promise.all([
-            fetchGlosses({ datasetId: controlDatasetId, limit: exampleLimit, mode: "control" }),
-            fetchGlosses({ datasetId: treatmentDatasetId, limit: exampleLimit, mode: "treatment" })
+            fetchGlosses({ datasetId: controlDatasetId, limit: randomSample ? undefined : exampleLimit, mode: "control" }),
+            fetchGlosses({ datasetId: treatmentDatasetId, limit: randomSample ? undefined : exampleLimit, mode: "treatment" })
           ]);
 
-          const controlRows = (controlResponse.data || []).map((row, idx) => ({
+          const controlRows = selectExamples(controlResponse.data || [], exampleLimit, randomSample).map((row, idx) => ({
             ...row,
             mode: "control",
             originDatasetId: controlDatasetId,
@@ -271,7 +294,7 @@ function GlossingPage() {
             localExampleId: `control-${idx + 1}`
           }));
 
-          const treatmentRows = (treatmentResponse.data || []).map((row, idx) => ({
+          const treatmentRows = selectExamples(treatmentResponse.data || [], exampleLimit, randomSample).map((row, idx) => ({
             ...row,
             mode: "treatment",
             originDatasetId: treatmentDatasetId,
@@ -308,10 +331,10 @@ function GlossingPage() {
 
         const response = await fetchGlosses({
           datasetId,
-          limit: isStudy ? exampleLimit : undefined,
+          limit: isStudy && !randomSample ? exampleLimit : undefined,
           mode
         });
-        const rows = (response.data || []).map((row, idx) => ({
+        const rows = selectExamples(response.data || [], exampleLimit, isStudy && randomSample).map((row, idx) => ({
           ...row,
           mode,
           originDatasetId: datasetId,
@@ -351,6 +374,7 @@ function GlossingPage() {
     datasetId,
     mode,
     exampleLimit,
+    randomSample,
     isStudy,
     isShuffleStudy,
     controlDatasetId,
@@ -592,9 +616,12 @@ function GlossingPage() {
 
       finalData[idx] = {
         ...finalState,
+        transcript: row.transcript || "",
+        previousWords: originalState.words || {},
         source: row.source || finalState.source || "Unknown",
         mode: row.mode || mode,
         datasetId: row.originDatasetId || datasetId,
+        sourceRowIndex: Number(row.row_index || 0) || null,
         datasetName: row.originDatasetName || datasetInfo?.dataset_name || `Dataset ${datasetId}`
       };
 
@@ -652,6 +679,9 @@ function GlossingPage() {
     try {
       const response = await saveStudySession(payload);
       setSessionData({ ...payload, sessionId: response.sessionId });
+      if (isStudy && response.sessionId) {
+        setFeedbackModalOpen(true);
+      }
 
       try {
         const report = await fetchStudyComparisonReport(response.sessionId);
@@ -667,6 +697,28 @@ function GlossingPage() {
     }
 
     setSessionComplete(true);
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!sessionData?.sessionId) {
+      setFeedbackError("Session was not saved, so feedback cannot be linked yet.");
+      return;
+    }
+
+    setFeedbackSubmitting(true);
+    setFeedbackError("");
+    try {
+      await submitStudySessionFeedback(sessionData.sessionId, {
+        surveyAnswers,
+        interviewAnswers
+      });
+      setFeedbackSubmitted(true);
+      setFeedbackModalOpen(false);
+    } catch (err) {
+      setFeedbackError(normalizeError(err));
+    } finally {
+      setFeedbackSubmitting(false);
+    }
   };
 
   const handleContinueStudy = () => {
@@ -844,6 +896,64 @@ function GlossingPage() {
     document.body.removeChild(link);
   };
 
+  const downloadSentenceLevelChangesCsv = async () => {
+    if (!sessionData?.sessionId) return;
+
+    const saved = await fetchStudySessionExport(sessionData.sessionId);
+    const summary = saved.session.summary_json || {};
+    const rowsByExample = new Map();
+
+    (saved.rows || []).forEach((row) => {
+      const exampleRows = rowsByExample.get(row.example_order) || [];
+      exampleRows.push(row);
+      rowsByExample.set(row.example_order, exampleRows);
+    });
+
+    const csvCell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csvRows = [[
+      "Session_ID", "Run_ID", "Username", "Study_Type", "Example_ID", "Mode", "Dataset_ID",
+      "Source_Row_Index", "Transcript", "Previous_Segmentation", "Previous_Gloss",
+      "Updated_Segmentation", "Updated_Gloss", "Translation", "Source", "Time_Spent_Sec",
+      "Edit_Count", "Certainty"
+    ]];
+
+    [...rowsByExample.entries()]
+      .sort(([left], [right]) => Number(left) - Number(right))
+      .forEach(([exampleOrder, exampleRows]) => {
+        const orderedRows = exampleRows.sort((left, right) => Number(left.word_index) - Number(right.word_index));
+        const exampleIndex = Number(exampleOrder) - 1;
+        const firstRow = orderedRows[0];
+        csvRows.push([
+          saved.session.session_id,
+          saved.session.run_id || "",
+          saved.session.username || "anonymous",
+          saved.session.study_type || "single",
+          exampleOrder,
+          firstRow.row_mode || saved.session.mode,
+          firstRow.row_dataset_id || saved.session.dataset_id,
+          firstRow.source_row_index || "",
+          firstRow.transcript || "",
+          orderedRows.map((row) => row.previous_segmentation || "").join(" "),
+          orderedRows.map((row) => row.previous_gloss || "").join(" "),
+          orderedRows.map((row) => row.segmentation || "").join(" "),
+          orderedRows.map((row) => row.gloss || "").join(" "),
+          firstRow.translation || "",
+          firstRow.source || "",
+          firstRow.time_spent_sec || 0,
+          Number(summary.exampleEdits?.[exampleIndex] || 0),
+          summary.exampleUncertain?.[exampleIndex] ? "uncertain" : "certain"
+        ]);
+      });
+
+    const csv = `data:text/csv;charset=utf-8,${csvRows.map((row) => row.map(csvCell).join(",")).join("\n")}`;
+    const link = document.createElement("a");
+    link.setAttribute("href", encodeURI(csv));
+    link.setAttribute("download", `sentence_level_changes_${saved.session.session_id}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const downloadComparisonReport = () => {
     if (!comparisonReport) return;
 
@@ -900,8 +1010,16 @@ function GlossingPage() {
           <div className="session-actions">
             <button className="btn btn-secondary" onClick={downloadCurrentSessionCSV}>All Changes CSV</button>
             <button className="btn btn-secondary" onClick={downloadExampleLevelCsv}>Example CSV</button>
+            {sessionData?.sessionId && (
+              <button className="btn btn-secondary" onClick={downloadSentenceLevelChangesCsv}>Sentence-Level Changes CSV</button>
+            )}
             {comparisonReport && (
               <button className="btn btn-secondary" onClick={downloadComparisonReport}>Comparison CSV</button>
+            )}
+            {isStudy && sessionData?.sessionId && (
+              <button className="btn btn-secondary" onClick={() => setFeedbackModalOpen(true)}>
+                {feedbackSubmitted ? "View/Edit Feedback" : "Complete Feedback"}
+              </button>
             )}
             {hasNextStudyPart ? (
               <button className="btn btn-primary" onClick={handleContinueStudy}>
@@ -922,6 +1040,121 @@ function GlossingPage() {
             <Link to="/glossing" className="link-simple">Back to Glossing</Link>
           </div>
         </div>
+
+        {feedbackModalOpen && isStudy && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.55)",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              zIndex: 1200,
+              padding: "20px"
+            }}
+          >
+            <div
+              style={{
+                background: "#fff",
+                borderRadius: "12px",
+                width: "min(980px, 96vw)",
+                maxHeight: "92vh",
+                overflowY: "auto",
+                padding: "20px"
+              }}
+            >
+              <h3 style={{ marginTop: 0 }}>Post-Session Survey and Interview</h3>
+              <p>Please complete this form for the session you just finished. Responses are tied to your user and session.</p>
+
+              {surveyQuestionSections.map((section) => (
+                <div key={section.title} style={{ marginBottom: "18px" }}>
+                  <h4>{section.title}</h4>
+                  {section.questions.map((question) => (
+                    <div key={question.id} style={{ marginBottom: "12px" }}>
+                      <label htmlFor={question.id} style={{ display: "block", fontWeight: 600, marginBottom: "6px" }}>
+                        {question.prompt}
+                      </label>
+                      {question.type === "scale" ? (
+                        <>
+                          <select
+                            id={question.id}
+                            value={surveyAnswers[question.id] || ""}
+                            onChange={(event) => setSurveyAnswers((prev) => ({
+                              ...prev,
+                              [question.id]: event.target.value
+                            }))}
+                            style={{ width: "100%" }}
+                          >
+                            <option value="">Select a score</option>
+                            {Array.from({ length: question.max - question.min + 1 }, (_, idx) => idx + question.min).map((value) => (
+                              <option key={value} value={value}>{value}</option>
+                            ))}
+                          </select>
+                          <small>{question.min} ({question.minLabel}) to {question.max} ({question.maxLabel})</small>
+                        </>
+                      ) : (
+                        <textarea
+                          id={question.id}
+                          rows={3}
+                          value={surveyAnswers[question.id] || ""}
+                          onChange={(event) => setSurveyAnswers((prev) => ({
+                            ...prev,
+                            [question.id]: event.target.value
+                          }))}
+                          style={{ width: "100%" }}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              <div style={{ marginBottom: "18px" }}>
+                <h4>Interview Questions</h4>
+                {interviewQuestions.map((question, idx) => {
+                  const key = `interview_${idx + 1}`;
+                  return (
+                    <div key={key} style={{ marginBottom: "14px" }}>
+                      <label htmlFor={key} style={{ display: "block", fontWeight: 600, marginBottom: "6px" }}>
+                        {question}
+                      </label>
+                      <textarea
+                        id={key}
+                        rows={7}
+                        value={interviewAnswers[key] || ""}
+                        onChange={(event) => setInterviewAnswers((prev) => ({
+                          ...prev,
+                          [key]: event.target.value
+                        }))}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {feedbackError && <p className="status-error">{feedbackError}</p>}
+
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setFeedbackModalOpen(false)}
+                  disabled={feedbackSubmitting}
+                >
+                  Close
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSubmitFeedback}
+                  disabled={feedbackSubmitting}
+                >
+                  {feedbackSubmitting ? "Saving..." : "Submit Feedback"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -970,14 +1203,18 @@ function GlossingPage() {
         </div>
       </div>
 
-      <div className="glossing-container">
-        <div className="text-side">
-          <h3>Source Info</h3>
-          <div className="source-badge">{(currentExample.source || "unknown").toUpperCase()}</div>
-          <h3>Transcript</h3>
+      <section className="example-context" aria-label="Example context">
+        <div>
+          <span className="input-label">Source</span>
+          <span className="source-badge">{(currentExample.source || "unknown").toUpperCase()}</span>
+        </div>
+        <div>
+          <span className="input-label">Transcript</span>
           <div className="transcript-box">{currentExample.transcript}</div>
         </div>
+      </section>
 
+      <div className="glossing-container">
         <div className="glossing-side">
           <h3>
             Work Area
