@@ -7,36 +7,36 @@ export const surveyQuestionSections = [
         prompt: "How much mental and perceptual activity was required?",
         type: "scale",
         min: 1,
-        max: 20,
-        minLabel: "Low",
-        maxLabel: "High"
+        max: 10,
+        minLabel: "Very low mental activity",
+        maxLabel: "Very high mental activity"
       },
       {
         id: "scratch_goal_success",
         prompt: "How successful were you in accomplishing the goals of the task?",
         type: "scale",
         min: 1,
-        max: 20,
-        minLabel: "Low",
-        maxLabel: "High"
+        max: 10,
+        minLabel: "Not at all successful",
+        maxLabel: "Extremely successful"
       },
       {
         id: "scratch_effort",
         prompt: "How hard did you have to work to accomplish your level of performance?",
         type: "scale",
         min: 1,
-        max: 20,
-        minLabel: "Low",
-        maxLabel: "High"
+        max: 10,
+        minLabel: "Very little effort",
+        maxLabel: "Very high effort"
       },
       {
         id: "scratch_affect",
         prompt: "How discouraged or stressed versus relaxed and content did you feel?",
         type: "scale",
         min: 1,
-        max: 20,
-        minLabel: "Low",
-        maxLabel: "High"
+        max: 10,
+        minLabel: "Very discouraged or stressed",
+        maxLabel: "Very relaxed and content"
       },
       {
         id: "scratch_meets_requirements",
@@ -75,36 +75,36 @@ export const surveyQuestionSections = [
         prompt: "How much mental and perceptual activity was required with predictions?",
         type: "scale",
         min: 1,
-        max: 20,
-        minLabel: "Low",
-        maxLabel: "High"
+        max: 10,
+        minLabel: "Very low mental activity",
+        maxLabel: "Very high mental activity"
       },
       {
         id: "pred_goal_success",
         prompt: "How successful were you in accomplishing the goals with predictions?",
         type: "scale",
         min: 1,
-        max: 20,
-        minLabel: "Low",
-        maxLabel: "High"
+        max: 10,
+        minLabel: "Not at all successful",
+        maxLabel: "Extremely successful"
       },
       {
         id: "pred_effort",
         prompt: "How hard did you have to work with predictions?",
         type: "scale",
         min: 1,
-        max: 20,
-        minLabel: "Low",
-        maxLabel: "High"
+        max: 10,
+        minLabel: "Very little effort",
+        maxLabel: "Very high effort"
       },
       {
         id: "pred_affect",
         prompt: "How discouraged or stressed versus relaxed and content did you feel with predictions?",
         type: "scale",
         min: 1,
-        max: 20,
-        minLabel: "Low",
-        maxLabel: "High"
+        max: 10,
+        minLabel: "Very discouraged or stressed",
+        maxLabel: "Very relaxed and content"
       },
       {
         id: "pred_meets_requirements",

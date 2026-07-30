@@ -1086,12 +1086,22 @@ function GlossingPage() {
                             }))}
                             style={{ width: "100%" }}
                           >
-                            <option value="">Select a score</option>
+                            <option value="">
+                              Select a score ({question.min} = {question.minLabel}; {question.max} = {question.maxLabel})
+                            </option>
                             {Array.from({ length: question.max - question.min + 1 }, (_, idx) => idx + question.min).map((value) => (
-                              <option key={value} value={value}>{value}</option>
+                              <option key={value} value={value}>
+                                {value === question.min
+                                  ? `${value} — ${question.minLabel}`
+                                  : value === question.max
+                                    ? `${value} — ${question.maxLabel}`
+                                    : value}
+                              </option>
                             ))}
                           </select>
-                          <small>{question.min} ({question.minLabel}) to {question.max} ({question.maxLabel})</small>
+                          <small>
+                            {question.min} = {question.minLabel}; {question.max} = {question.maxLabel}
+                          </small>
                         </>
                       ) : (
                         <textarea
